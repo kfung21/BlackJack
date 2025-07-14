@@ -539,6 +539,9 @@ export const useGameStore = defineStore('game', () => {
       return false
     }
     
+    // Always update lastBet when a new bet is placed
+    lastBet.value = amount
+    
     const main = mainPlayer.value
     main.bet = amount
     main.hands = [{
@@ -710,6 +713,9 @@ export const useGameStore = defineStore('game', () => {
       return
     }
     
+    // Initialize current hand index
+    player.currentHandIndex = 0
+    
     // Skip players with blackjack
     if (player.hands[0]?.outcome === 'blackjack' || player.status === 'blackjack') {
       player.status = 'done'
@@ -735,46 +741,98 @@ export const useGameStore = defineStore('game', () => {
     const playerStore = usePlayerStore()
     const delay = 1000 // Bot thinking time
     
-    while (player.status === 'playing' && !player.hands[0].isComplete) {
-      await new Promise(resolve => setTimeout(resolve, delay))
+    // Play each hand
+    for (let handIndex = 0; handIndex < player.hands.length; handIndex++) {
+      player.currentHandIndex = handIndex
+      const hand = player.hands[handIndex]
       
-      const decision = getBotDecision(player.hands[0], dealerUpCard.value, player.bankroll)
+      if (hand.isComplete) continue
       
-      if (decision === 'hit') {
-        await hitForPlayer(player)
-      } else if (decision === 'stand') {
-        standForPlayer(player)
-      } else if (decision === 'double' && player.hands[0].cards.length === 2) {
-        await doubleDownForPlayer(player)
-      } else if (decision === 'split' && canSplitForPlayer(player)) {
-        await splitForPlayer(player)
-      } else {
-        standForPlayer(player) // Default to stand
+      while (!hand.isComplete) {
+        await new Promise(resolve => setTimeout(resolve, delay))
+        
+        const decision = getBotDecision(hand, dealerUpCard.value, player.bankroll)
+        
+        if (decision === 'hit') {
+          await hitForPlayer(player, handIndex)
+        } else if (decision === 'stand') {
+          standForPlayer(player, handIndex)
+        } else if (decision === 'double' && hand.cards.length === 2) {
+          await doubleDownForPlayer(player, handIndex)
+        } else if (decision === 'split' && canSplitForPlayer(player, handIndex) && player.hands.length < 4) {
+          await splitForPlayer(player, handIndex)
+          // After split, restart the loop to play all hands
+          handIndex = -1 // Will be incremented to 0
+          break
+        } else {
+          standForPlayer(player, handIndex) // Default to stand
+        }
       }
     }
-  }
-  
-  async function hitForPlayer(player) {
-    const hand = player.hands[0] // For now, just handle first hand
-    await animatedDeal(hand, 1)
     
-    const handValue = calculateHandValue(hand.cards)
-    if (handValue.busted) {
-      hand.isComplete = true
-      hand.outcome = 'lose'
-      player.status = 'busted'
-      nextPlayer()
-    }
-  }
-  
-  function standForPlayer(player) {
-    player.hands[0].isComplete = true
     player.status = 'done'
     nextPlayer()
   }
   
-  async function doubleDownForPlayer(player) {
-    const hand = player.hands[0]
+  async function hitForPlayer(player, handIndex = 0) {
+    const hand = player.hands[handIndex]
+    await animatedDeal(hand, 1)
+    
+    const handValue = calculateHandValue(hand.cards)
+    
+    // Auto-complete if busted OR if reached 21
+    if (handValue.busted || handValue.total === 21) {
+      hand.isComplete = true
+      
+      if (handValue.busted) {
+        hand.outcome = 'lose'
+      }
+      // If it's 21, outcome will be determined against dealer
+      
+      // Check if all hands are complete
+      if (player.hands.every(h => h.isComplete)) {
+        player.status = 'done'
+        nextPlayer()
+      } else {
+        // Move to next hand
+        player.currentHandIndex++
+        if (player.currentHandIndex >= player.hands.length) {
+          player.status = 'done'
+          nextPlayer()
+        } else {
+          // Update message for next hand
+          if (player.type === 'human') {
+            message.value = `${player.name}'s turn - Hand ${player.currentHandIndex + 1} of ${player.hands.length}`
+          }
+        }
+      }
+    }
+  }
+  
+  function standForPlayer(player, handIndex = 0) {
+    player.hands[handIndex].isComplete = true
+    
+    // Check if all hands are complete
+    if (player.hands.every(h => h.isComplete)) {
+      player.status = 'done'
+      nextPlayer()
+    } else {
+      // Move to next hand
+      player.currentHandIndex++
+      if (player.currentHandIndex >= player.hands.length) {
+        player.status = 'done'
+        nextPlayer()
+      } else {
+        // Update message for next hand
+        if (player.type === 'human') {
+          message.value = `${player.name}'s turn - Hand ${player.currentHandIndex + 1} of ${player.hands.length}`
+        }
+      }
+    }
+  }
+  
+  async function doubleDownForPlayer(player, handIndex = 0) {
+    const hand = player.hands[handIndex]
     if (player.bankroll >= hand.bet) {
       hand.bet *= 2
       hand.doubled = true
@@ -786,19 +844,123 @@ export const useGameStore = defineStore('game', () => {
       }
       
       hand.isComplete = true
-      player.status = 'done'
-      nextPlayer()
+      
+      // Check if all hands are complete
+      if (player.hands.every(h => h.isComplete)) {
+        player.status = 'done'
+        nextPlayer()
+      } else {
+        // Move to next hand
+        player.currentHandIndex++
+        if (player.currentHandIndex >= player.hands.length) {
+          player.status = 'done'
+          nextPlayer()
+        }
+      }
     }
   }
   
-  function canSplitForPlayer(player) {
-    const hand = player.hands[0]
+  function canSplitForPlayer(player, handIndex = 0) {
+    // FIXED: Allow up to 4 hands (3 splits)
+    if (player.hands.length >= 4) return false // Maximum 4 hands allowed
+    
+    // Check specific hand for split eligibility
+    if (handIndex >= player.hands.length) return false
+    const hand = player.hands[handIndex]
+    
+    // Must have exactly 2 cards
+    if (hand.cards.length !== 2) return false
+    
+    // Check if it's a pair and player has enough bankroll
     return canSplit(hand.cards) && player.bankroll >= hand.bet
   }
   
-  async function splitForPlayer(player) {
-    // TODO: Implement split logic for bots
-    standForPlayer(player) // For now, just stand
+  async function splitForPlayer(player, handIndex = 0) {
+    if (!canSplitForPlayer(player, handIndex)) return
+    
+    const originalHand = player.hands[handIndex]
+    const splitCard1 = originalHand.cards[0]
+    const splitCard2 = originalHand.cards[1]
+    
+    // Create two new hands from the split
+    const newHand1 = {
+      cards: [splitCard1],
+      bet: originalHand.bet,
+      isComplete: false,
+      outcome: null,
+      doubled: false
+    }
+    
+    const newHand2 = {
+      cards: [splitCard2],
+      bet: originalHand.bet,
+      isComplete: false,
+      outcome: null,
+      doubled: false
+    }
+    
+    // Replace the original hand with the two new hands
+    player.hands.splice(handIndex, 1, newHand1, newHand2)
+    
+    // Deal one card to each new hand
+    await animatedDeal(player.hands[handIndex], 1)
+    await animatedDeal(player.hands[handIndex + 1], 1)
+    
+    // If splitting aces, only get one card each and auto-complete
+    if (splitCard1.value === 'A') {
+      player.hands[handIndex].isComplete = true
+      player.hands[handIndex + 1].isComplete = true
+      
+      // Check for 21 (but not blackjack on split aces)
+      for (let i = handIndex; i < handIndex + 2; i++) {
+        const hand = player.hands[i]
+        const value = calculateHandValue(hand.cards)
+        if (value.total === 21) {
+          // Just 21, not blackjack
+          hand.outcome = null // Will be determined against dealer
+        }
+      }
+      
+      // Move to next unplayed hand or next player
+      player.currentHandIndex = handIndex + 2
+      if (player.currentHandIndex >= player.hands.length || player.hands.every(h => h.isComplete)) {
+        player.status = 'done'
+        nextPlayer()
+      }
+    } else {
+      // For non-aces, check if either hand got 21 and auto-complete it
+      for (let i = handIndex; i < handIndex + 2; i++) {
+        const hand = player.hands[i]
+        const value = calculateHandValue(hand.cards)
+        if (value.total === 21) {
+          // Auto-complete any hand that reaches 21 after split
+          hand.isComplete = true
+          console.log(`Hand ${i + 1} auto-completed with 21`)
+        }
+      }
+      
+      // Continue playing the first non-complete split hand
+      player.currentHandIndex = handIndex
+      
+      // If the first hand is already complete (21), move to next hand
+      if (player.hands[handIndex].isComplete) {
+        player.currentHandIndex = handIndex + 1
+        if (player.currentHandIndex >= player.hands.length || player.hands[player.currentHandIndex].isComplete) {
+          // Both hands are complete
+          player.status = 'done'
+          nextPlayer()
+          return
+        }
+      }
+      
+      // Update message to show which hand is being played
+      if (player.type === 'human') {
+        message.value = `${player.name}'s turn - Hand ${player.currentHandIndex + 1} of ${player.hands.length}`
+      }
+    }
+    
+    // Save state after split
+    saveCurrentGameState()
   }
   
   // Player actions (for current human player)
@@ -807,7 +969,7 @@ export const useGameStore = defineStore('game', () => {
     
     // Check if we're trying to play for the currently active player
     if (currentPlayer.value?.id === activeViewPlayer.value?.id && currentPlayer.value?.type === 'human') {
-      await hitForPlayer(currentPlayer.value)
+      await hitForPlayer(currentPlayer.value, currentPlayer.value.currentHandIndex || 0)
     }
   }
   
@@ -816,7 +978,7 @@ export const useGameStore = defineStore('game', () => {
     
     // Check if we're trying to play for the currently active player
     if (currentPlayer.value?.id === activeViewPlayer.value?.id && currentPlayer.value?.type === 'human') {
-      standForPlayer(currentPlayer.value)
+      standForPlayer(currentPlayer.value, currentPlayer.value.currentHandIndex || 0)
     }
   }
   
@@ -825,7 +987,7 @@ export const useGameStore = defineStore('game', () => {
     
     // Check if we're trying to play for the currently active player
     if (currentPlayer.value?.id === activeViewPlayer.value?.id && currentPlayer.value?.type === 'human') {
-      await doubleDownForPlayer(currentPlayer.value)
+      await doubleDownForPlayer(currentPlayer.value, currentPlayer.value.currentHandIndex || 0)
     }
   }
   
@@ -834,7 +996,8 @@ export const useGameStore = defineStore('game', () => {
     
     // Check if we're trying to play for the currently active player
     if (currentPlayer.value?.id === activeViewPlayer.value?.id && currentPlayer.value?.type === 'human') {
-      await splitForPlayer(currentPlayer.value)
+      const handIndex = currentPlayer.value.currentHandIndex || 0
+      await splitForPlayer(currentPlayer.value, handIndex)
     }
   }
   
@@ -888,8 +1051,11 @@ export const useGameStore = defineStore('game', () => {
     // Calculate outcomes for all players
     for (const player of players.value) {
       let totalPayout = 0
+      let totalBet = 0
       
       for (const hand of player.hands) {
+        totalBet += hand.bet
+        
         if (!hand.outcome) {
           const playerBlackjack = isBlackjack(hand.cards)
           const dealerBlackjack = isBlackjack(dealerHand.value)
@@ -921,7 +1087,7 @@ export const useGameStore = defineStore('game', () => {
             playerStore.currentPlayer.id,
             player.hands,
             getOverallOutcome(player.hands),
-            player.bet,
+            totalBet, // Use total bet from all hands
             totalPayout
           )
         }
@@ -946,11 +1112,55 @@ export const useGameStore = defineStore('game', () => {
     const main = mainPlayer.value
     if (!main || !main.hands.length) return ''
     
-    const hand = main.hands[0]
-    if (hand.outcome === 'blackjack') return 'Blackjack! You won!'
-    if (hand.outcome === 'win') return `You won $${hand.bet}!`
-    if (hand.outcome === 'lose') return `You lost $${hand.bet}`
-    return 'Push - no money lost or won'
+    // Calculate total payout for all hands
+    let totalPayout = 0
+    let totalBet = 0
+    let outcomes = []
+    
+    for (const hand of main.hands) {
+      totalBet += hand.bet
+      
+      if (hand.outcome === 'blackjack') {
+        totalPayout += hand.bet * 1.5
+        outcomes.push('blackjack')
+      } else if (hand.outcome === 'win') {
+        totalPayout += hand.bet
+        outcomes.push('win')
+      } else if (hand.outcome === 'lose') {
+        totalPayout -= hand.bet
+        outcomes.push('lose')
+      } else if (hand.outcome === 'push') {
+        outcomes.push('push')
+      }
+    }
+    
+    // Create appropriate message based on outcomes
+    if (main.hands.length === 1) {
+      // Single hand
+      const outcome = outcomes[0]
+      if (outcome === 'blackjack') return 'Blackjack! You won!'
+      if (outcome === 'win') return `You won $${Math.abs(totalPayout)}!`
+      if (outcome === 'lose') return `You lost $${Math.abs(totalPayout)}`
+      return 'Push - no money lost or won'
+    } else {
+      // Multiple hands
+      const wins = outcomes.filter(o => o === 'win' || o === 'blackjack').length
+      const losses = outcomes.filter(o => o === 'lose').length
+      const pushes = outcomes.filter(o => o === 'push').length
+      
+      let result = []
+      if (wins > 0) result.push(`${wins} win${wins > 1 ? 's' : ''}`)
+      if (losses > 0) result.push(`${losses} loss${losses > 1 ? 'es' : ''}`)
+      if (pushes > 0) result.push(`${pushes} push${pushes > 1 ? 'es' : ''}`)
+      
+      if (totalPayout > 0) {
+        return `${result.join(', ')} - Won $${totalPayout} total!`
+      } else if (totalPayout < 0) {
+        return `${result.join(', ')} - Lost $${Math.abs(totalPayout)} total`
+      } else {
+        return `${result.join(', ')} - Broke even`
+      }
+    }
   }
   
   // Compatibility functions for existing code
@@ -970,7 +1180,8 @@ export const useGameStore = defineStore('game', () => {
     
     // If viewing the current playing player, show their active hand
     if (viewPlayer.id === currentPlayer.value?.id) {
-      return viewPlayer.hands[0] || null
+      const idx = currentPlayer.value.currentHandIndex || 0
+      return viewPlayer.hands[idx] || viewPlayer.hands[0] || null
     }
     
     // Otherwise show the viewed player's first hand

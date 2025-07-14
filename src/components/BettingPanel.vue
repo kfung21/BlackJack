@@ -119,6 +119,9 @@ function maxBet() {
 
 function placeBet() {
   if (canPlaceBet.value) {
+    // Update the last bet in gameStore
+    gameStore.lastBet = currentBet.value
+    
     // Use the multiplayer-aware bet function
     gameStore.placeMainPlayerBet(currentBet.value)
     emit('betPlaced', currentBet.value)

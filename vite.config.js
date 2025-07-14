@@ -7,6 +7,10 @@ export default defineConfig({
     vue(),
     VitePWA({
       registerType: 'autoUpdate',
+      
+      // Include your icon
+      includeAssets: ['black-jack-icon.png'],
+      
       workbox: {
         // Basic offline-first configuration that works on Netlify
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
@@ -70,14 +74,10 @@ export default defineConfig({
         start_url: '/',
         icons: [
           {
-            src: 'pwa-192x192.png',
-            sizes: '192x192',
-            type: 'image/png'
-          },
-          {
-            src: 'pwa-512x512.png',
-            sizes: '512x512',
-            type: 'image/png'
+            src: '/black-jack-icon.png',
+            sizes: '348x505',
+            type: 'image/png',
+            purpose: 'any maskable'
           }
         ]
       },

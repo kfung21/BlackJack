@@ -16,7 +16,7 @@
               <input 
                 type="checkbox" 
                 v-model="localSettings.showCount"
-                @change="updateSettings"
+                @change="updateSingleSetting('showCount', localSettings.showCount)"
               >
               <span class="checkbox-custom"></span>
               Show Card Count
@@ -28,7 +28,7 @@
               <input 
                 type="checkbox" 
                 v-model="localSettings.showTrueCount"
-                @change="updateSettings"
+                @change="updateSingleSetting('showTrueCount', localSettings.showTrueCount)"
               >
               <span class="checkbox-custom"></span>
               Show True Count
@@ -39,7 +39,7 @@
             <label class="setting-label">Counting System</label>
             <select 
               v-model="localSettings.countingSystem"
-              @change="updateSettings"
+              @change="updateSingleSetting('countingSystem', localSettings.countingSystem)"
               class="setting-select"
             >
               <option 
@@ -63,15 +63,15 @@
           <div class="setting-item">
             <label class="setting-label">Number of Decks</label>
             <select 
-              v-model="localSettings.numDecks"
-              @change="updateSettings"
+              v-model.number="localSettings.numDecks"
+              @change="updateSingleSetting('numDecks', localSettings.numDecks)"
               class="setting-select"
             >
-              <option value="1">1 Deck (Single Deck)</option>
-              <option value="2">2 Decks (Double Deck)</option>
-              <option value="4">4 Decks (Quad Deck)</option>
-              <option value="6">6 Decks (Standard)</option>
-              <option value="8">8 Decks (Casino Style)</option>
+              <option :value="1">1 Deck (Single Deck)</option>
+              <option :value="2">2 Decks (Double Deck)</option>
+              <option :value="4">4 Decks (Quad Deck)</option>
+              <option :value="6">6 Decks (Standard)</option>
+              <option :value="8">8 Decks (Casino Style)</option>
             </select>
             <div class="system-description">
               More decks make card counting more challenging but more realistic.
@@ -83,7 +83,7 @@
               <input 
                 type="checkbox" 
                 v-model="localSettings.soundEnabled"
-                @change="updateSettings"
+                @change="updateSingleSetting('soundEnabled', localSettings.soundEnabled)"
               >
               <span class="checkbox-custom"></span>
               Sound Effects
@@ -95,7 +95,7 @@
               <input 
                 type="checkbox" 
                 v-model="localSettings.showHints"
-                @change="updateSettings"
+                @change="updateSingleSetting('showHints', localSettings.showHints)"
               >
               <span class="checkbox-custom"></span>
               Enable Hint Button
@@ -109,8 +109,8 @@
               min="0" 
               max="2000" 
               step="250"
-              v-model="localSettings.dealerSpeed"
-              @input="updateSettings"
+              v-model.number="localSettings.dealerSpeed"
+              @input="updateSingleSetting('dealerSpeed', localSettings.dealerSpeed)"
               class="setting-range"
             >
             <div class="range-labels">
@@ -228,11 +228,22 @@ const dealerSpeedText = computed(() => {
 })
 
 onMounted(() => {
-  localSettings.value = { ...playerStore.settings }
+  // Create a deep copy of settings to avoid reactivity issues
+  localSettings.value = JSON.parse(JSON.stringify(playerStore.settings))
 })
 
-async function updateSettings() {
-  await playerStore.updateSettings(localSettings.value)
+// Update a single setting immediately
+async function updateSingleSetting(key, value) {
+  console.log(`Updating ${key} to ${value}`)
+  
+  // Update local settings
+  localSettings.value[key] = value
+  
+  // Create an object with just this setting change
+  const settingUpdate = { [key]: value }
+  
+  // Update in the store
+  await playerStore.updateSettings(settingUpdate)
 }
 
 async function resetBankroll(amount = 1000) {

@@ -19,7 +19,7 @@ export const usePlayerStore = defineStore('player', () => {
     showTrueCount: true,
     soundEnabled: true,
     autoPlay: false,
-    dealerSpeed: 1000,
+    dealerSpeed: 0, // Changed default to 0 (fastest)
     hapticFeedback: true,
     fullscreen: false,
     numDecks: 6,
@@ -50,10 +50,25 @@ export const usePlayerStore = defineStore('player', () => {
     try {
       const playerId = await createPlayer(username, initialBankroll)
       const player = await getPlayer(playerId)
-      const playerSettings = await getPlayerSettings(playerId)
+      
+      // Create default settings for new player with fastest dealer speed
+      const defaultSettings = {
+        countingSystem: 'Hi-Lo',
+        showCount: true,
+        showTrueCount: true,
+        soundEnabled: true,
+        autoPlay: false,
+        dealerSpeed: 0, // Fastest speed for new players
+        hapticFeedback: true,
+        fullscreen: false,
+        numDecks: 6,
+        showHints: true
+      }
+      
+      await updatePlayerSettings(playerId, defaultSettings)
       
       currentPlayer.value = player
-      settings.value = { ...settings.value, ...playerSettings }
+      settings.value = defaultSettings
       isLoggedIn.value = true
       
       await loadPlayers()
@@ -71,7 +86,22 @@ export const usePlayerStore = defineStore('player', () => {
       
       if (player) {
         currentPlayer.value = player
-        settings.value = { ...settings.value, ...playerSettings }
+        
+        // Merge saved settings with defaults to ensure all properties exist
+        const defaultSettings = {
+          countingSystem: 'Hi-Lo',
+          showCount: true,
+          showTrueCount: true,
+          soundEnabled: true,
+          autoPlay: false,
+          dealerSpeed: 0, // Default to fastest if not saved
+          hapticFeedback: true,
+          fullscreen: false,
+          numDecks: 6,
+          showHints: true
+        }
+        
+        settings.value = { ...defaultSettings, ...playerSettings }
         isLoggedIn.value = true
         return true
       }
@@ -100,8 +130,20 @@ export const usePlayerStore = defineStore('player', () => {
     if (!currentPlayer.value) return false
     
     try {
-      settings.value = { ...settings.value, ...newSettings }
-      await updatePlayerSettings(currentPlayer.value.id, settings.value)
+      // Ensure we're only updating changed properties
+      const updatedSettings = { ...settings.value }
+      
+      // Update only the properties that are present in newSettings
+      Object.keys(newSettings).forEach(key => {
+        if (newSettings[key] !== undefined) {
+          updatedSettings[key] = newSettings[key]
+        }
+      })
+      
+      settings.value = updatedSettings
+      
+      // Save all settings to IndexedDB
+      await updatePlayerSettings(currentPlayer.value.id, updatedSettings)
       
       // Handle PWA-specific settings
       if (newSettings.fullscreen !== undefined) {
@@ -159,7 +201,7 @@ export const usePlayerStore = defineStore('player', () => {
       showTrueCount: true,
       soundEnabled: true,
       autoPlay: false,
-      dealerSpeed: 1000,
+      dealerSpeed: 0, // Reset to fastest
       hapticFeedback: true,
       fullscreen: false,
       numDecks: 6,

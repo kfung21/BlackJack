@@ -302,7 +302,7 @@ export async function getGameHistory(playerId, limit = 50) {
   })
 }
 
-// Player Settings Functions
+// Player Settings Functions - FIXED to handle partial updates properly
 export async function getPlayerSettings(playerId) {
   const db = await openDB()
   
@@ -312,11 +312,20 @@ export async function getPlayerSettings(playerId) {
     const request = store.get(playerId)
     
     request.onsuccess = () => {
-      resolve(request.result?.settings || {})
+      const result = request.result
+      if (result && result.settings) {
+        // Return the settings object directly
+        resolve(result.settings)
+      } else {
+        // Return empty object if no settings found
+        resolve({})
+      }
     }
     
     request.onerror = () => {
-      reject(request.error)
+      console.error('Error getting player settings:', request.error)
+      // Return empty object on error instead of rejecting
+      resolve({})
     }
   })
 }
@@ -328,20 +337,51 @@ export async function updatePlayerSettings(playerId, settings) {
     const transaction = db.transaction(['playerSettings'], 'readwrite')
     const store = transaction.objectStore('playerSettings')
     
-    const data = {
-      playerId,
-      settings,
-      updatedAt: new Date()
+    // First, try to get existing settings
+    const getRequest = store.get(playerId)
+    
+    getRequest.onsuccess = () => {
+      const existingData = getRequest.result
+      
+      // Create or update the settings data
+      const data = {
+        playerId,
+        settings: settings, // Store the complete settings object
+        updatedAt: new Date()
+      }
+      
+      // Use put to create or update
+      const putRequest = store.put(data)
+      
+      putRequest.onsuccess = () => {
+        console.log('Settings saved successfully:', settings)
+        resolve(true)
+      }
+      
+      putRequest.onerror = () => {
+        console.error('Error saving settings:', putRequest.error)
+        reject(putRequest.error)
+      }
     }
     
-    const request = store.put(data)
-    
-    request.onsuccess = () => {
-      resolve(true)
-    }
-    
-    request.onerror = () => {
-      reject(request.error)
+    getRequest.onerror = () => {
+      console.error('Error getting existing settings:', getRequest.error)
+      // Even if get fails, try to put new settings
+      const data = {
+        playerId,
+        settings: settings,
+        updatedAt: new Date()
+      }
+      
+      const putRequest = store.put(data)
+      
+      putRequest.onsuccess = () => {
+        resolve(true)
+      }
+      
+      putRequest.onerror = () => {
+        reject(putRequest.error)
+      }
     }
   })
 }

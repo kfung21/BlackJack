@@ -1,9 +1,71 @@
 <template>
   <div class="game-view">
     <div class="game-container">
+      <!-- Game Over Modal -->
+      <div v-if="showGameOver" class="game-over-modal">
+        <div class="modal-overlay" @click.stop></div>
+        <div class="modal-content">
+          <div class="game-over-header">
+            <h2>😢 Out of Chips!</h2>
+          </div>
+          <div class="game-over-body">
+            <p>Sorry, you don't have enough money to continue playing.</p>
+            <p class="current-bankroll">Current bankroll: ${{ playerStore.bankroll }}</p>
+            
+            <div class="restart-options">
+              <h3>Choose how to continue:</h3>
+              
+              <!-- Quick restart options -->
+              <div class="quick-restart-buttons">
+                <button 
+                  v-for="amount in restartAmounts"
+                  :key="amount"
+                  @click="restartWithAmount(amount)"
+                  class="restart-btn"
+                >
+                  <span class="amount">${{ amount }}</span>
+                  <span class="label">{{ getRestartLabel(amount) }}</span>
+                </button>
+              </div>
+              
+              <!-- Custom amount -->
+              <div class="custom-restart">
+                <label>Or choose custom amount:</label>
+                <div class="custom-input-group">
+                  <span class="currency-symbol">$</span>
+                  <input 
+                    type="number" 
+                    v-model.number="customRestartAmount"
+                    placeholder="Enter amount"
+                    min="50"
+                    max="10000"
+                    step="50"
+                    class="custom-input"
+                    @keyup.enter="restartWithAmount(customRestartAmount)"
+                  >
+                  <button 
+                    @click="restartWithAmount(customRestartAmount)"
+                    :disabled="customRestartAmount < 50"
+                    class="btn btn-primary"
+                  >
+                    Start
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div class="game-over-footer">
+            <button @click="backToProfile" class="btn btn-secondary">
+              Change Player
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- Compact Header - Just bankroll -->
       <div class="compact-header">
-        <span class="bankroll">${{ playerStore.bankroll }}</span>
+        <span class="bankroll" :class="{ 'low-bankroll': isLowBankroll }">${{ playerStore.bankroll }}</span>
         
         <!-- Multiplayer toggle and new shoe -->
         <div class="header-buttons">
@@ -50,22 +112,18 @@
           Viewing: {{ gameStore.activeViewPlayer.name }} {{ gameStore.activeViewPlayer.avatar }}
         </div>
         
-        <!-- Debug info -->
-        <div v-if="false" style="color: white; font-size: 10px; margin: 5px;">
-          Debug: Viewing {{ gameStore.activeViewPlayerId }}, 
-          Hands: {{ currentPlayerHands.length }},
-          Cards: {{ currentPlayerHands[0]?.cards?.length || 0 }}
+        <!-- Show multiple hands if split -->
+        <div :class="{ 'split-hands': currentPlayerHands.length > 1 }">
+          <PlayerHand
+            v-for="(hand, index) in currentPlayerHands"
+            :key="`hand-${index}-${gameStore.activeViewPlayerId}-${hand.cards.length}`"
+            :hand="hand"
+            :hand-index="index"
+            :is-active="isHandActive(index)"
+            :is-dealing="gameStore.isDealing"
+            @card-click="onCardClick"
+          />
         </div>
-        
-        <PlayerHand
-          v-for="(hand, index) in currentPlayerHands"
-          :key="`hand-${index}-${gameStore.activeViewPlayerId}-${hand.cards.length}`"
-          :hand="hand"
-          :hand-index="index"
-          :is-active="index === 0 && isActiveHand"
-          :is-dealing="gameStore.isDealing"
-          @card-click="onCardClick"
-        />
         
         <!-- Show message if no hands -->
         <div v-if="currentPlayerHands.length === 0" class="no-hands-message">
@@ -199,6 +257,75 @@ const showInsurance = ref(false)
 const showHintModal = ref(false)
 const showBottomNav = ref(false)
 const processedCards = ref(new Set()) // Track cards already counted
+const showGameOver = ref(false)
+const customRestartAmount = ref(1000)
+
+// Restart amount options
+const restartAmounts = [200, 500, 1000, 2500]
+
+// Check if bankroll is too low
+const isLowBankroll = computed(() => {
+  return playerStore.bankroll < 5 // Minimum bet is $5
+})
+
+// Watch for game phase changes to check for game over
+watch(() => gameStore.gamePhase, (newPhase) => {
+  if (newPhase === 'betting' && playerStore.bankroll < 5) {
+    showGameOver.value = true
+  }
+})
+
+// Also check on mount
+onMounted(async () => {
+  if (!playerStore.isLoggedIn) {
+    router.push('/profile')
+    return
+  }
+  
+  // Check if player is out of money
+  if (playerStore.bankroll < 5) {
+    showGameOver.value = true
+  }
+  
+  gameStore.initializeGame()
+  await addVisibleCardsToCount()
+})
+
+function getRestartLabel(amount) {
+  if (amount === 200) return 'Beginner'
+  if (amount === 500) return 'Casual'
+  if (amount === 1000) return 'Standard'
+  if (amount === 2500) return 'High Roller'
+  return ''
+}
+
+async function restartWithAmount(amount) {
+  if (amount < 50) {
+    alert('Minimum restart amount is $50')
+    return
+  }
+  
+  // Calculate the difference to add
+  const currentBankroll = playerStore.bankroll
+  const difference = amount - currentBankroll
+  
+  // Update bankroll
+  await playerStore.updateBankroll(difference)
+  
+  // Reset game
+  gameStore.resetGame()
+  countingStore.resetCount()
+  
+  // Close modal
+  showGameOver.value = false
+  
+  // Show success message
+  gameStore.message = `Bankroll reset to $${amount}. Good luck!`
+}
+
+function backToProfile() {
+  router.push('/profile')
+}
 
 const currentPlayerHands = computed(() => {
   // Force reactivity by accessing the refs directly
@@ -252,6 +379,14 @@ const isActiveHand = computed(() => {
          gameStore.gamePhase === 'playing'
 })
 
+function isHandActive(handIndex) {
+  if (!isActiveHand.value) return false
+  
+  // Check if this specific hand is the active one
+  const currentPlayer = gameStore.currentPlayer
+  return currentPlayer && (currentPlayer.currentHandIndex || 0) === handIndex
+}
+
 const messageClass = computed(() => {
   if (gameStore.message.includes('won')) return 'message-win'
   if (gameStore.message.includes('lost')) return 'message-lose'
@@ -274,30 +409,54 @@ const isMainPlayerTurn = computed(() => {
 
 const canHit = computed(() => {
   if (!gameStore.canPlay || !isMainPlayerTurn.value) return false
+  const currentPlayer = gameStore.currentPlayer
+  if (!currentPlayer) return false
+  
+  const currentHandIndex = currentPlayer.currentHandIndex || 0
   const hands = currentPlayerHands.value
-  return hands.length > 0 && !hands[0].isComplete
+  if (hands.length === 0 || currentHandIndex >= hands.length) return false
+  
+  return !hands[currentHandIndex].isComplete
 })
 
 const canStand = computed(() => {
   if (!gameStore.canPlay || !isMainPlayerTurn.value) return false
+  const currentPlayer = gameStore.currentPlayer
+  if (!currentPlayer) return false
+  
+  const currentHandIndex = currentPlayer.currentHandIndex || 0
   const hands = currentPlayerHands.value
-  return hands.length > 0 && !hands[0].isComplete
+  if (hands.length === 0 || currentHandIndex >= hands.length) return false
+  
+  return !hands[currentHandIndex].isComplete
 })
 
 const canDouble = computed(() => {
   if (!gameStore.canPlay || !isMainPlayerTurn.value) return false
+  const currentPlayer = gameStore.currentPlayer
+  if (!currentPlayer) return false
+  
+  const currentHandIndex = currentPlayer.currentHandIndex || 0
   const hands = currentPlayerHands.value
-  if (hands.length === 0) return false
-  const hand = hands[0]
+  if (hands.length === 0 || currentHandIndex >= hands.length) return false
+  
+  const hand = hands[currentHandIndex]
   return hand.cards.length === 2 && !hand.doubled && playerStore.bankroll >= hand.bet
 })
 
 const canSplitHand = computed(() => {
   if (!gameStore.canPlay || !isMainPlayerTurn.value) return false
+  const currentPlayer = gameStore.currentPlayer
+  if (!currentPlayer) return false
+  
   const hands = currentPlayerHands.value
-  if (hands.length === 0) return false
-  const hand = hands[0]
-  if (hand.cards.length !== 2) return false
+  if (hands.length === 0 || hands.length >= 4) return false // Max 4 hands allowed
+  
+  const currentHandIndex = currentPlayer.currentHandIndex || 0
+  if (currentHandIndex >= hands.length) return false
+  
+  const hand = hands[currentHandIndex]
+  if (!hand || hand.cards.length !== 2) return false
   
   const firstValue = getCardValue(hand.cards[0])
   const secondValue = getCardValue(hand.cards[1])
@@ -306,16 +465,6 @@ const canSplitHand = computed(() => {
 
 const canUseSameBet = computed(() => {
   return gameStore.lastBet <= playerStore.bankroll && gameStore.lastBet > 0
-})
-
-onMounted(async () => {
-  if (!playerStore.isLoggedIn) {
-    router.push('/profile')
-    return
-  }
-  
-  gameStore.initializeGame()
-  await addVisibleCardsToCount()
 })
 
 // Save game state before leaving
@@ -559,6 +708,177 @@ function toggleMultiplayer() {
   margin: 0 auto;
 }
 
+/* Game Over Modal */
+.game-over-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 3000;
+}
+
+.modal-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+}
+
+.modal-content {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: linear-gradient(135deg, #1a5490 0%, #0f4c75 100%);
+  border-radius: 16px;
+  max-width: 400px;
+  width: 90%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+}
+
+.game-over-header {
+  text-align: center;
+  padding: 24px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.game-over-header h2 {
+  color: white;
+  margin: 0;
+  font-size: 28px;
+}
+
+.game-over-body {
+  padding: 24px;
+  text-align: center;
+}
+
+.game-over-body p {
+  color: rgba(255, 255, 255, 0.9);
+  margin: 0 0 12px 0;
+  font-size: 16px;
+}
+
+.current-bankroll {
+  font-size: 18px;
+  font-weight: bold;
+  color: #f44336;
+  margin-bottom: 24px !important;
+}
+
+.restart-options {
+  margin-top: 24px;
+}
+
+.restart-options h3 {
+  color: white;
+  margin: 0 0 16px 0;
+  font-size: 18px;
+}
+
+.quick-restart-buttons {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.restart-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  padding: 16px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.restart-btn:hover {
+  background: rgba(52, 168, 83, 0.3);
+  border-color: #34a853;
+  transform: translateY(-2px);
+}
+
+.restart-btn .amount {
+  font-size: 20px;
+  font-weight: bold;
+  color: white;
+}
+
+.restart-btn .label {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.custom-restart {
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding-top: 20px;
+}
+
+.custom-restart label {
+  display: block;
+  color: rgba(255, 255, 255, 0.9);
+  margin-bottom: 12px;
+  font-size: 14px;
+}
+
+.custom-input-group {
+  display: flex;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.currency-symbol {
+  padding: 12px 8px 12px 12px;
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: bold;
+}
+
+.custom-input {
+  flex: 1;
+  padding: 12px 8px;
+  border: none;
+  background: transparent;
+  color: white;
+  font-size: 16px;
+  outline: none;
+}
+
+.custom-input::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.game-over-footer {
+  padding: 0 24px 24px;
+  text-align: center;
+}
+
+/* Low bankroll indicator */
+.low-bankroll {
+  color: #f44336 !important;
+  animation: pulse-red 2s ease-in-out infinite;
+}
+
+@keyframes pulse-red {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
 /* Compact Header */
 .compact-header {
   display: flex;
@@ -664,6 +984,18 @@ function toggleMultiplayer() {
   margin: 8px 0;
 }
 
+.split-hands {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.split-hands .player-hand {
+  flex: 1;
+  max-width: 180px;
+}
+
 .viewing-player-indicator {
   text-align: center;
   font-size: 12px;
@@ -714,6 +1046,12 @@ function toggleMultiplayer() {
 
 .btn-secondary {
   background: linear-gradient(145deg, #ff9800 0%, #f57c00 100%);
+  color: white;
+}
+
+.btn-primary {
+  background: linear-gradient(145deg, #34a853 0%, #2d8659 100%);
+  color: white;
 }
 
 /* Compact Hint Section */
@@ -765,11 +1103,6 @@ function toggleMultiplayer() {
   opacity: 0.5;
   cursor: not-allowed;
   background: linear-gradient(145deg, #666 0%, #888 100%);
-}
-
-.btn-primary {
-  background: linear-gradient(145deg, #34a853 0%, #2d8659 100%);
-  color: white;
 }
 
 /* Hidden Bottom Navigation */
