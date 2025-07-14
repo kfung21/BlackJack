@@ -79,6 +79,22 @@
           </div>
           
           <div class="setting-item">
+            <label class="setting-label">Blackjack Payout</label>
+            <select 
+              v-model="localSettings.blackjackPayout"
+              @change="updateSingleSetting('blackjackPayout', localSettings.blackjackPayout)"
+              class="setting-select"
+            >
+              <option value="3:2">3:2 (Standard)</option>
+              <option value="6:5">6:5 (House Advantage)</option>
+              <option value="1:1">1:1 (Even Money)</option>
+            </select>
+            <div class="system-description">
+              {{ blackjackPayoutDescription }}
+            </div>
+          </div>
+          
+          <div class="setting-item">
             <label class="setting-label">
               <input 
                 type="checkbox" 
@@ -218,6 +234,19 @@ const currentSystemDescription = computed(() => {
   return system ? system.description : ''
 })
 
+const blackjackPayoutDescription = computed(() => {
+  switch (localSettings.value.blackjackPayout) {
+    case '3:2':
+      return 'Standard payout - Get $15 for every $10 bet on blackjack'
+    case '6:5':
+      return 'House advantage - Get $12 for every $10 bet on blackjack'
+    case '1:1':
+      return 'Even money - Get $10 for every $10 bet on blackjack'
+    default:
+      return ''
+  }
+})
+
 const dealerSpeedText = computed(() => {
   const speed = localSettings.value.dealerSpeed
   if (speed === 0) return 'Instant'
@@ -230,6 +259,11 @@ const dealerSpeedText = computed(() => {
 onMounted(() => {
   // Create a deep copy of settings to avoid reactivity issues
   localSettings.value = JSON.parse(JSON.stringify(playerStore.settings))
+  
+  // Ensure blackjackPayout has a default value
+  if (!localSettings.value.blackjackPayout) {
+    localSettings.value.blackjackPayout = '3:2'
+  }
 })
 
 // Update a single setting immediately

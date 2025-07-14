@@ -23,7 +23,8 @@ export const usePlayerStore = defineStore('player', () => {
     hapticFeedback: true,
     fullscreen: false,
     numDecks: 6,
-    showHints: true
+    showHints: true,
+    blackjackPayout: '3:2' // Default to standard payout
   })
   const isLoggedIn = ref(false)
   const isOnline = ref(navigator.onLine)

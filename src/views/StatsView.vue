@@ -23,8 +23,8 @@
               <div class="stat-label">Win Rate</div>
             </div>
             <div class="stat-item">
-              <div class="stat-value">${{ totalProfit }}</div>
-              <div class="stat-label" :class="profitClass">Net Profit</div>
+              <div class="stat-value" :class="profitClass">${{ totalProfit }}</div>
+              <div class="stat-label">Net Profit</div>
             </div>
           </div>
         </div>

@@ -194,8 +194,22 @@ export const useGameStore = defineStore('game', () => {
       deck.value = savedState.deck || []
       numDecks.value = savedState.numDecks || 6
       
-      // Restore multiplayer state
-      players.value = savedState.players || []
+      // Restore multiplayer state - ENSURE PLAYER TYPES ARE PRESERVED
+      if (savedState.players) {
+        players.value = savedState.players.map(p => {
+          // Ensure each player has the correct type
+          const restoredPlayer = {
+            ...p,
+            type: p.type || (p.isMainPlayer ? 'human' : 'bot'), // Fallback if type is missing
+            avatar: p.type === 'bot' ? '🤖' : '👤' // Ensure avatar matches type
+          }
+          console.log(`Restored player ${restoredPlayer.name} with type: ${restoredPlayer.type}`)
+          return restoredPlayer
+        })
+      } else {
+        players.value = []
+      }
+      
       currentPlayerIndex.value = savedState.currentPlayerIndex || 0
       isMultiplayer.value = savedState.isMultiplayer || false
       activeViewPlayerId.value = savedState.activeViewPlayerId || 'main-player'
@@ -219,6 +233,7 @@ export const useGameStore = defineStore('game', () => {
       }
       
       console.log('Game state restored successfully from localStorage')
+      console.log('Restored players:', players.value.map(p => ({ name: p.name, type: p.type })))
       
       // If game was in progress, restart autosave
       if (gamePhase.value !== 'betting' && gamePhase.value !== 'finished') {
@@ -351,6 +366,9 @@ export const useGameStore = defineStore('game', () => {
       return false
     }
     
+    // CRITICAL: Ensure type is properly set
+    console.log(`Adding player ${name} with type: ${type}`)
+    
     // Determine seat number
     let seatNumber = preferredSeat
     if (!seatNumber || players.value.some(p => p.seatNumber === seatNumber)) {
@@ -366,7 +384,7 @@ export const useGameStore = defineStore('game', () => {
     const newPlayer = {
       id: `player-${Date.now()}`,
       name,
-      type,
+      type: type, // Explicitly set the type
       bankroll,
       hands: [],
       bet: 0,
@@ -375,6 +393,8 @@ export const useGameStore = defineStore('game', () => {
       isMainPlayer: false,
       seatNumber
     }
+    
+    console.log(`Created new player:`, newPlayer)
     
     // Insert player in correct position based on seat number
     players.value.push(newPlayer)
@@ -557,6 +577,9 @@ export const useGameStore = defineStore('game', () => {
       // Process bets for all players
       for (const player of players.value) {
         if (!player.isMainPlayer) {
+          // IMPORTANT: Make sure player type is correctly set
+          console.log(`Setting up bet for ${player.name}, type: ${player.type}`)
+          
           if (player.type === 'bot') {
             // Bot betting logic
             const minBet = 5
@@ -592,17 +615,24 @@ export const useGameStore = defineStore('game', () => {
     // Start autosave when game begins
     startAutosave()
     
-    console.log('Starting to deal cards to players:', players.value.map(p => ({ name: p.name, hands: p.hands.length })))
+    console.log('=== STARTING DEALING ===')
+    console.log('Players before dealing:', players.value.map(p => ({ 
+      name: p.name, 
+      type: p.type,
+      isMainPlayer: p.isMainPlayer,
+      hands: p.hands.length 
+    })))
     
     // Deal initial cards - 2 rounds
     for (let round = 0; round < 2; round++) {
+      console.log(`Dealing round ${round + 1}`)
       // Deal to each player in seat order
       for (const player of players.value) {
         if (player.hands && player.hands.length > 0) {
           const card = dealCard()
           if (card) {
             player.hands[0].cards.push(card)
-            console.log(`Dealt ${card.value}${card.suit} to ${player.name}`)
+            console.log(`Dealt ${card.value}${card.suit} to ${player.name} (type: ${player.type})`)
           }
           
           // Add animation delay
@@ -621,6 +651,7 @@ export const useGameStore = defineStore('game', () => {
       if (dealerCard) {
         if (round === 1) dealerCard.faceDown = true // Second card face down
         dealerHand.value.push(dealerCard)
+        console.log(`Dealt ${dealerCard.value}${dealerCard.suit} to dealer${round === 1 ? ' (face down)' : ''}`)
         
         const playerStore = usePlayerStore()
         const delay = playerStore.settings.dealerSpeed / 2
@@ -630,8 +661,10 @@ export const useGameStore = defineStore('game', () => {
       }
     }
     
-    console.log('Dealing complete. Player hands:', players.value.map(p => ({ 
+    console.log('=== DEALING COMPLETE ===')
+    console.log('Player hands after dealing:', players.value.map(p => ({ 
       name: p.name, 
+      type: p.type,
       cards: p.hands[0]?.cards?.length || 0 
     })))
     
@@ -657,6 +690,8 @@ export const useGameStore = defineStore('game', () => {
   function checkForBlackjacks() {
     let hasBlackjacks = false
     
+    console.log('=== CHECKING FOR BLACKJACKS ===')
+    
     // Check all players for blackjack
     for (const player of players.value) {
       if (player.hands.length > 0 && isBlackjack(player.hands[0].cards)) {
@@ -664,6 +699,7 @@ export const useGameStore = defineStore('game', () => {
         player.hands[0].isComplete = true // Auto-complete blackjack hands
         player.status = 'blackjack'
         hasBlackjacks = true
+        console.log(`${player.name} has blackjack!`)
       }
     }
     
@@ -671,6 +707,7 @@ export const useGameStore = defineStore('game', () => {
     const dealerBlackjack = isBlackjack(dealerHand.value)
     
     if (dealerBlackjack) {
+      console.log('Dealer has blackjack!')
       // Reveal hole card
       if (dealerHand.value[1]) {
         dealerHand.value[1].faceDown = false
@@ -691,16 +728,14 @@ export const useGameStore = defineStore('game', () => {
       
       gamePhase.value = 'finished'
       finishGame()
-    } else if (hasBlackjacks) {
-      // If any player has blackjack but dealer doesn't, continue play
-      // Players with blackjack are already marked complete
-      gamePhase.value = 'playing'
-      currentPlayerIndex.value = 0
-      startPlayerTurn()
     } else {
-      // No blackjacks, normal play
+      // No dealer blackjack, start normal play
+      console.log('No dealer blackjack, starting normal play')
       gamePhase.value = 'playing'
       currentPlayerIndex.value = 0
+      
+      // CRITICAL: Don't skip players who have blackjack
+      // They still need to see their result before game proceeds
       startPlayerTurn()
     }
   }
@@ -708,31 +743,62 @@ export const useGameStore = defineStore('game', () => {
   async function startPlayerTurn() {
     const player = currentPlayer.value
     if (!player) {
+      console.log('No more players - moving to dealer')
       gamePhase.value = 'dealer'
       playDealerHand()
       return
     }
     
+    console.log(`=== STARTING TURN FOR ${player.name} ===`)
+    console.log(`Player type: ${player.type}, isMainPlayer: ${player.isMainPlayer}`)
+    console.log(`Player status: ${player.status}`)
+    
     // Initialize current hand index
     player.currentHandIndex = 0
     
-    // Skip players with blackjack
+    // Handle players with blackjack
     if (player.hands[0]?.outcome === 'blackjack' || player.status === 'blackjack') {
+      console.log(`${player.name} has blackjack`)
       player.status = 'done'
-      nextPlayer()
-      return
+      
+      // CRITICAL: For human players with blackjack, still show them and wait
+      if (player.type === 'human') {
+        setActiveViewPlayer(player.id)
+        message.value = `${player.name} has Blackjack!`
+        // Don't auto-advance - let them see their blackjack
+        // Wait for them to acknowledge before moving on
+        setTimeout(() => {
+          if (currentPlayer.value?.id === player.id && player.status === 'done') {
+            nextPlayer()
+          }
+        }, 3000) // Give human players 3 seconds to see their blackjack
+        return
+      } else {
+        // Only auto-advance for bots
+        await new Promise(resolve => setTimeout(resolve, 1500)) // Let viewers see the blackjack
+        nextPlayer()
+        return
+      }
     }
     
     player.status = 'playing'
     
-    if (player.type === 'bot') {
-      // Bot auto-play
+    // CRITICAL FIX: Set active view for ANY human player (not just main player)
+    if (player.type === 'human') {
+      console.log(`${player.name} is a HUMAN player - setting active view and waiting for input`)
+      setActiveViewPlayer(player.id)
+      message.value = `${player.name}'s turn`
+      // DO NOT call nextPlayer() or playBotTurn() - wait for human input!
+    } else if (player.type === 'bot') {
+      // Only bots should auto-play
+      console.log(`${player.name} is a BOT - auto-playing`)
+      setActiveViewPlayer(player.id) // Still show bot's cards
       await playBotTurn(player)
     } else {
-      // Human player - switch view to them if multiplayer
-      if (isMultiplayer.value) {
-        setActiveViewPlayer(player.id)
-      }
+      // This should never happen
+      console.error(`Player ${player.name} has unknown type: ${player.type}`)
+      // Default to waiting for input to be safe
+      setActiveViewPlayer(player.id)
       message.value = `${player.name}'s turn`
     }
   }
@@ -740,6 +806,8 @@ export const useGameStore = defineStore('game', () => {
   async function playBotTurn(player) {
     const playerStore = usePlayerStore()
     const delay = 1000 // Bot thinking time
+    
+    console.log(`=== PLAYING BOT TURN FOR ${player.name} ===`)
     
     // Play each hand
     for (let handIndex = 0; handIndex < player.hands.length; handIndex++) {
@@ -752,6 +820,7 @@ export const useGameStore = defineStore('game', () => {
         await new Promise(resolve => setTimeout(resolve, delay))
         
         const decision = getBotDecision(hand, dealerUpCard.value, player.bankroll)
+        console.log(`Bot ${player.name} decision: ${decision}`)
         
         if (decision === 'hit') {
           await hitForPlayer(player, handIndex)
@@ -771,34 +840,79 @@ export const useGameStore = defineStore('game', () => {
     }
     
     player.status = 'done'
+    console.log(`Bot ${player.name} turn complete, calling nextPlayer()`)
     nextPlayer()
   }
   
+  // NEW: Manual advancement for human players
+  function advanceAfterHumanTurn() {
+    console.log('=== ADVANCE AFTER HUMAN TURN ===')
+    const player = currentPlayer.value
+    
+    if (!player || player.type !== 'human') {
+      console.log('Not a human player, skipping')
+      return
+    }
+    
+    if (player.status === 'done') {
+      console.log(`Human player ${player.name} is done, moving to next player`)
+      nextPlayer()
+    } else {
+      console.log(`Human player ${player.name} is not done yet`)
+    }
+  }
+  
+  // Modified hit/stand/double to include manual advancement checks
   async function hitForPlayer(player, handIndex = 0) {
+    console.log(`=== HIT FOR PLAYER ${player.name} ===`)
     const hand = player.hands[handIndex]
     await animatedDeal(hand, 1)
     
     const handValue = calculateHandValue(hand.cards)
+    console.log(`${player.name} hand value: ${handValue.total}, busted: ${handValue.busted}`)
     
     // Auto-complete if busted OR if reached 21
     if (handValue.busted || handValue.total === 21) {
       hand.isComplete = true
+      console.log(`Hand complete - ${handValue.busted ? 'BUSTED' : 'Got 21'}`)
       
       if (handValue.busted) {
         hand.outcome = 'lose'
+        message.value = `${player.name} BUSTED!`
+      } else {
+        message.value = `${player.name} has 21!`
       }
-      // If it's 21, outcome will be determined against dealer
       
       // Check if all hands are complete
       if (player.hands.every(h => h.isComplete)) {
         player.status = 'done'
-        nextPlayer()
+        console.log(`All hands complete for ${player.name}`)
+        
+        // For humans, wait a moment then advance
+        if (player.type === 'human') {
+          console.log('Human player done - advancing after delay')
+          setTimeout(() => {
+            if (currentPlayer.value?.id === player.id && player.status === 'done') {
+              nextPlayer()
+            }
+          }, 2000) // 2 second delay to see result
+        }
+        // REMOVED bot nextPlayer() call - it's handled in playBotTurn
       } else {
         // Move to next hand
         player.currentHandIndex++
         if (player.currentHandIndex >= player.hands.length) {
           player.status = 'done'
-          nextPlayer()
+          
+          // Same delay for humans
+          if (player.type === 'human') {
+            setTimeout(() => {
+              if (currentPlayer.value?.id === player.id && player.status === 'done') {
+                nextPlayer()
+              }
+            }, 2000)
+          }
+          // REMOVED bot nextPlayer() call
         } else {
           // Update message for next hand
           if (player.type === 'human') {
@@ -807,21 +921,43 @@ export const useGameStore = defineStore('game', () => {
         }
       }
     }
+    // If not busted and not 21, human players continue playing
   }
   
   function standForPlayer(player, handIndex = 0) {
+    console.log(`=== STAND FOR PLAYER ${player.name} ===`)
     player.hands[handIndex].isComplete = true
     
     // Check if all hands are complete
     if (player.hands.every(h => h.isComplete)) {
       player.status = 'done'
-      nextPlayer()
+      console.log(`All hands complete for ${player.name}`)
+      
+      // For humans, advance after a short delay
+      if (player.type === 'human') {
+        console.log('Human player standing - advancing after delay')
+        message.value = `${player.name} stands`
+        setTimeout(() => {
+          if (currentPlayer.value?.id === player.id && player.status === 'done') {
+            nextPlayer()
+          }
+        }, 1500) // 1.5 second delay
+      }
+      // REMOVED bot nextPlayer() call - it's handled in playBotTurn
     } else {
       // Move to next hand
       player.currentHandIndex++
       if (player.currentHandIndex >= player.hands.length) {
         player.status = 'done'
-        nextPlayer()
+        
+        if (player.type === 'human') {
+          setTimeout(() => {
+            if (currentPlayer.value?.id === player.id && player.status === 'done') {
+              nextPlayer()
+            }
+          }, 1500)
+        }
+        // REMOVED bot nextPlayer() call
       } else {
         // Update message for next hand
         if (player.type === 'human') {
@@ -848,13 +984,30 @@ export const useGameStore = defineStore('game', () => {
       // Check if all hands are complete
       if (player.hands.every(h => h.isComplete)) {
         player.status = 'done'
-        nextPlayer()
+        
+        // For humans, wait before advancing
+        if (player.type === 'human') {
+          setTimeout(() => {
+            if (currentPlayer.value?.id === player.id && player.status === 'done') {
+              nextPlayer()
+            }
+          }, 2000)
+        }
+        // REMOVED bot nextPlayer() call - it's handled in playBotTurn
       } else {
         // Move to next hand
         player.currentHandIndex++
         if (player.currentHandIndex >= player.hands.length) {
           player.status = 'done'
-          nextPlayer()
+          
+          if (player.type === 'human') {
+            setTimeout(() => {
+              if (currentPlayer.value?.id === player.id && player.status === 'done') {
+                nextPlayer()
+              }
+            }, 2000)
+          }
+          // REMOVED bot nextPlayer() call
         }
       }
     }
@@ -965,20 +1118,45 @@ export const useGameStore = defineStore('game', () => {
   
   // Player actions (for current human player)
   async function hit() {
-    if (!canPlay.value) return
+    console.log('=== HIT ACTION CALLED ===')
+    console.log('canPlay:', canPlay.value)
+    console.log('currentPlayer:', currentPlayer.value)
+    console.log('activeViewPlayer:', activeViewPlayer.value)
+    
+    if (!canPlay.value) {
+      console.log('Cannot play - canPlay is false')
+      return
+    }
     
     // Check if we're trying to play for the currently active player
     if (currentPlayer.value?.id === activeViewPlayer.value?.id && currentPlayer.value?.type === 'human') {
+      console.log('Hitting for human player:', currentPlayer.value.name)
       await hitForPlayer(currentPlayer.value, currentPlayer.value.currentHandIndex || 0)
+    } else {
+      console.log('Hit conditions not met')
+      console.log('Current player ID:', currentPlayer.value?.id)
+      console.log('Active view player ID:', activeViewPlayer.value?.id)
+      console.log('Current player type:', currentPlayer.value?.type)
     }
   }
   
   function stand() {
-    if (!canPlay.value) return
+    console.log('=== STAND ACTION CALLED ===')
+    console.log('canPlay:', canPlay.value)
+    console.log('currentPlayer:', currentPlayer.value)
+    console.log('activeViewPlayer:', activeViewPlayer.value)
+    
+    if (!canPlay.value) {
+      console.log('Cannot play - canPlay is false')
+      return
+    }
     
     // Check if we're trying to play for the currently active player
     if (currentPlayer.value?.id === activeViewPlayer.value?.id && currentPlayer.value?.type === 'human') {
+      console.log('Standing for human player:', currentPlayer.value.name)
       standForPlayer(currentPlayer.value, currentPlayer.value.currentHandIndex || 0)
+    } else {
+      console.log('Stand conditions not met')
     }
   }
   
@@ -1002,12 +1180,24 @@ export const useGameStore = defineStore('game', () => {
   }
   
   function nextPlayer() {
+    console.log(`=== NEXT PLAYER CALLED ===`)
+    console.log(`Current player index: ${currentPlayerIndex.value}`)
+    console.log(`Total players: ${players.value.length}`)
+    
+    // Guard against duplicate calls
+    if (gamePhase.value !== 'playing') {
+      console.log('Not in playing phase, ignoring nextPlayer call')
+      return
+    }
+    
     currentPlayerIndex.value++
     
     if (currentPlayerIndex.value >= players.value.length) {
+      console.log('All players have played - moving to dealer')
       gamePhase.value = 'dealer'
       playDealerHand()
     } else {
+      console.log(`Moving to player ${currentPlayerIndex.value}: ${players.value[currentPlayerIndex.value]?.name}`)
       startPlayerTurn()
     }
   }
@@ -1065,7 +1255,23 @@ export const useGameStore = defineStore('game', () => {
         // Calculate payout
         let handPayout = 0
         if (hand.outcome === 'blackjack') {
-          handPayout = hand.bet * 1.5
+          // Use configurable blackjack payout
+          const playerStore = usePlayerStore()
+          const payoutSetting = playerStore.settings.blackjackPayout || '3:2'
+          
+          switch (payoutSetting) {
+            case '3:2':
+              handPayout = hand.bet * 1.5
+              break
+            case '6:5':
+              handPayout = hand.bet * 1.2
+              break
+            case '1:1':
+              handPayout = hand.bet
+              break
+            default:
+              handPayout = hand.bet * 1.5 // Fallback to standard
+          }
         } else if (hand.outcome === 'win') {
           handPayout = hand.bet
         } else if (hand.outcome === 'push') {
@@ -1121,7 +1327,23 @@ export const useGameStore = defineStore('game', () => {
       totalBet += hand.bet
       
       if (hand.outcome === 'blackjack') {
-        totalPayout += hand.bet * 1.5
+        // Use configurable blackjack payout
+        const playerStore = usePlayerStore()
+        const payoutSetting = playerStore.settings.blackjackPayout || '3:2'
+        
+        switch (payoutSetting) {
+          case '3:2':
+            totalPayout += hand.bet * 1.5
+            break
+          case '6:5':
+            totalPayout += hand.bet * 1.2
+            break
+          case '1:1':
+            totalPayout += hand.bet
+            break
+          default:
+            totalPayout += hand.bet * 1.5 // Fallback to standard
+        }
         outcomes.push('blackjack')
       } else if (hand.outcome === 'win') {
         totalPayout += hand.bet

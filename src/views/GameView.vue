@@ -1,4 +1,13 @@
-<template>
+// Show net result only for split hands
+const showNetResult = computed(() => {
+  if (gameStore.gamePhase !== 'finished') return false
+  
+  const viewPlayer = gameStore.activeViewPlayer
+  if (!viewPlayer || !viewPlayer.hands) return false
+  
+  // Only show net result if player has multiple hands (from splits)
+  return viewPlayer.hands.length > 1 && netResult.value !== null
+})<template>
   <div class="game-view">
     <div class="game-container">
       <!-- Game Over Modal -->
@@ -112,6 +121,12 @@
           Viewing: {{ gameStore.activeViewPlayer.name }} {{ gameStore.activeViewPlayer.avatar }}
         </div>
         
+        <!-- Net result for finished games with splits -->
+        <div v-if="showNetResult" class="net-result" :class="netResultClass">
+          <span class="net-label">Net:</span>
+          <span class="net-amount">{{ netResultText }}</span>
+        </div>
+        
         <!-- Show multiple hands if split -->
         <div :class="{ 'split-hands': currentPlayerHands.length > 1 }">
           <PlayerHand
@@ -132,11 +147,11 @@
       </div>
 
       <!-- Compact Action Buttons -->
-      <div class="action-buttons" v-if="gameStore.canPlay && isMainPlayerTurn">
+      <div class="action-buttons" v-if="gameStore.canPlay && isCurrentHumanPlayerTurn">
         <button 
           @click="hit"
           :disabled="!canHit"
-          class="btn btn-action"
+          class="btn btn-action btn-hit"
         >
           Hit
         </button>
@@ -144,36 +159,41 @@
         <button 
           @click="stand"
           :disabled="!canStand"
-          class="btn btn-action btn-secondary"
+          class="btn btn-action btn-stand"
         >
           Stand
         </button>
         
         <button 
-          v-if="canDouble"
           @click="doubleDown"
-          class="btn btn-action"
+          :disabled="!canDouble"
+          class="btn btn-action btn-double"
+          :class="{ 'btn-invisible': !canDouble }"
         >
           Double
         </button>
         
         <button 
-          v-if="canSplitHand"
-          @click="split"
-          class="btn btn-action"
-        >
-          Split
-        </button>
-      </div>
-
-      <!-- Compact Hint Button -->
-      <div class="hint-section" v-if="gameStore.canPlay && playerStore.settings.showHints && isMainPlayerTurn">
-        <button 
           @click="showHint"
-          class="btn btn-hint"
+          v-if="playerStore.settings.showHints"
+          class="btn btn-action btn-hint"
         >
           💡 Hint
         </button>
+        
+        <button 
+          @click="split"
+          :disabled="!canSplitHand"
+          class="btn btn-action btn-split"
+          :class="{ 'btn-invisible': !canSplitHand }"
+        >
+          Split
+        </button>
+        
+        <div 
+          v-if="!playerStore.settings.showHints"
+          class="btn-spacer"
+        ></div>
       </div>
 
       <!-- New Game Buttons -->
@@ -320,7 +340,7 @@ async function restartWithAmount(amount) {
   showGameOver.value = false
   
   // Show success message
-  gameStore.message = `Bankroll reset to $${amount}. Good luck!`
+  gameStore.message = `Bankroll reset to ${amount}. Good luck!`
 }
 
 function backToProfile() {
@@ -400,15 +420,26 @@ const showCurrentPlayer = computed(() => {
          gameStore.currentPlayer
 })
 
-const isMainPlayerTurn = computed(() => {
-  // Check if it's the turn of the player we're viewing
+// FIXED: Check if it's a human player's turn AND we're viewing them
+const isCurrentHumanPlayerTurn = computed(() => {
+  // Check if:
+  // 1. The current player in turn is human
+  // 2. We are viewing that same player
+  const currentPlayerIsHuman = gameStore.currentPlayer?.type === 'human'
   const viewingCurrentPlayer = gameStore.activeViewPlayer?.id === gameStore.currentPlayer?.id
-  return !gameStore.isMultiplayer || 
-         (viewingCurrentPlayer && gameStore.currentPlayer?.type === 'human')
+  
+  console.log('isCurrentHumanPlayerTurn check:')
+  console.log('- Current player:', gameStore.currentPlayer?.name, gameStore.currentPlayer?.type)
+  console.log('- Active view player:', gameStore.activeViewPlayer?.name)
+  console.log('- Current is human:', currentPlayerIsHuman)
+  console.log('- Viewing current:', viewingCurrentPlayer)
+  console.log('- Result:', currentPlayerIsHuman && viewingCurrentPlayer)
+  
+  return currentPlayerIsHuman && viewingCurrentPlayer
 })
 
 const canHit = computed(() => {
-  if (!gameStore.canPlay || !isMainPlayerTurn.value) return false
+  if (!gameStore.canPlay || !isCurrentHumanPlayerTurn.value) return false
   const currentPlayer = gameStore.currentPlayer
   if (!currentPlayer) return false
   
@@ -420,7 +451,7 @@ const canHit = computed(() => {
 })
 
 const canStand = computed(() => {
-  if (!gameStore.canPlay || !isMainPlayerTurn.value) return false
+  if (!gameStore.canPlay || !isCurrentHumanPlayerTurn.value) return false
   const currentPlayer = gameStore.currentPlayer
   if (!currentPlayer) return false
   
@@ -432,7 +463,7 @@ const canStand = computed(() => {
 })
 
 const canDouble = computed(() => {
-  if (!gameStore.canPlay || !isMainPlayerTurn.value) return false
+  if (!gameStore.canPlay || !isCurrentHumanPlayerTurn.value) return false
   const currentPlayer = gameStore.currentPlayer
   if (!currentPlayer) return false
   
@@ -445,7 +476,7 @@ const canDouble = computed(() => {
 })
 
 const canSplitHand = computed(() => {
-  if (!gameStore.canPlay || !isMainPlayerTurn.value) return false
+  if (!gameStore.canPlay || !isCurrentHumanPlayerTurn.value) return false
   const currentPlayer = gameStore.currentPlayer
   if (!currentPlayer) return false
   
@@ -465,6 +496,63 @@ const canSplitHand = computed(() => {
 
 const canUseSameBet = computed(() => {
   return gameStore.lastBet <= playerStore.bankroll && gameStore.lastBet > 0
+})
+
+// Calculate net result for current game
+const netResult = computed(() => {
+  if (gameStore.gamePhase !== 'finished') return null
+  
+  const viewPlayer = gameStore.activeViewPlayer
+  if (!viewPlayer || !viewPlayer.hands || viewPlayer.hands.length === 0) return null
+  
+  let totalBet = 0
+  let totalWon = 0
+  
+  for (const hand of viewPlayer.hands) {
+    totalBet += hand.bet || 0
+    
+    if (hand.outcome === 'blackjack') {
+      const payoutSetting = playerStore.settings.blackjackPayout || '3:2'
+      switch (payoutSetting) {
+        case '3:2':
+          totalWon += hand.bet + (hand.bet * 1.5)
+          break
+        case '6:5':
+          totalWon += hand.bet + (hand.bet * 1.2)
+          break
+        case '1:1':
+          totalWon += hand.bet + hand.bet
+          break
+      }
+    } else if (hand.outcome === 'win') {
+      totalWon += hand.bet * 2 // Original bet + winnings
+    } else if (hand.outcome === 'push') {
+      totalWon += hand.bet // Just get bet back
+    }
+    // For losses, totalWon stays 0 for that hand
+  }
+  
+  return totalWon - totalBet
+})
+
+const netResultText = computed(() => {
+  if (netResult.value === null) return ''
+  
+  if (netResult.value > 0) {
+    return `+${netResult.value.toFixed(2)}`
+  } else if (netResult.value < 0) {
+    return `-${Math.abs(netResult.value).toFixed(2)}`
+  } else {
+    return '$0.00'
+  }
+})
+
+const netResultClass = computed(() => {
+  if (netResult.value === null) return ''
+  
+  if (netResult.value > 0) return 'net-win'
+  if (netResult.value < 0) return 'net-loss'
+  return 'net-push'
 })
 
 // Save game state before leaving
@@ -706,6 +794,7 @@ function toggleMultiplayer() {
 .game-container {
   max-width: 390px;
   margin: 0 auto;
+  position: relative;
 }
 
 /* Game Over Modal */
@@ -1015,12 +1104,64 @@ function toggleMultiplayer() {
   font-style: italic;
 }
 
+/* Net Result Display */
+.net-result {
+  text-align: center;
+  margin: 8px 0;
+  padding: 8px 16px;
+  border-radius: 20px;
+  display: inline-block;
+  width: 100%;
+  font-weight: bold;
+  font-size: 16px;
+}
+
+.net-label {
+  color: rgba(255, 255, 255, 0.8);
+  margin-right: 8px;
+}
+
+.net-amount {
+  font-size: 18px;
+}
+
+.net-win {
+  background: rgba(52, 168, 83, 0.2);
+  border: 1px solid rgba(52, 168, 83, 0.4);
+}
+
+.net-win .net-amount {
+  color: #34a853;
+}
+
+.net-loss {
+  background: rgba(244, 67, 54, 0.2);
+  border: 1px solid rgba(244, 67, 54, 0.4);
+}
+
+.net-loss .net-amount {
+  color: #f44336;
+}
+
+.net-push {
+  background: rgba(255, 152, 0, 0.2);
+  border: 1px solid rgba(255, 152, 0, 0.4);
+}
+
+.net-push .net-amount {
+  color: #ff9800;
+}
+
 /* Compact Action Buttons */
 .action-buttons {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(70px, 1fr));
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(2, 1fr);
   gap: 6px;
   margin: 8px 0;
+  max-width: 360px;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .btn {
@@ -1030,7 +1171,8 @@ function toggleMultiplayer() {
   transition: all 0.2s ease;
   font-family: inherit;
   font-size: 14px;
-  padding: 8px 12px;
+  padding: 10px 8px;
+  min-height: 44px; /* Ensure consistent height */
 }
 
 .btn:disabled {
@@ -1040,8 +1182,49 @@ function toggleMultiplayer() {
 
 .btn-action {
   font-weight: 600;
-  background: linear-gradient(145deg, #2196f3 0%, #1976d2 100%);
   color: white;
+}
+
+/* Position buttons in consistent grid spots */
+.btn-hit {
+  grid-column: 1;
+  grid-row: 1;
+  background: linear-gradient(145deg, #2196f3 0%, #1976d2 100%);
+}
+
+.btn-stand {
+  grid-column: 2;
+  grid-row: 1;
+  background: linear-gradient(145deg, #ff9800 0%, #f57c00 100%);
+}
+
+.btn-double {
+  grid-column: 3;
+  grid-row: 1;
+  background: linear-gradient(145deg, #2196f3 0%, #1976d2 100%);
+}
+
+.btn-hint {
+  grid-column: 1;
+  grid-row: 2;
+  background: linear-gradient(145deg, #9c27b0 0%, #7b1fa2 100%);
+}
+
+.btn-split {
+  grid-column: 2;
+  grid-row: 2;
+  background: linear-gradient(145deg, #9c27b0 0%, #7b1fa2 100%);
+}
+
+.btn-spacer {
+  grid-column: 1;
+  grid-row: 2;
+  /* Empty space when hints are disabled */
+}
+
+/* Make buttons invisible but keep space when not available */
+.btn-invisible {
+  visibility: hidden;
 }
 
 .btn-secondary {
@@ -1052,20 +1235,6 @@ function toggleMultiplayer() {
 .btn-primary {
   background: linear-gradient(145deg, #34a853 0%, #2d8659 100%);
   color: white;
-}
-
-/* Compact Hint Section */
-.hint-section {
-  text-align: center;
-  margin: 8px 0;
-}
-
-.btn-hint {
-  background: linear-gradient(145deg, #9c27b0 0%, #7b1fa2 100%);
-  color: white;
-  padding: 8px 16px;
-  font-size: 12px;
-  width: auto;
 }
 
 .new-game-section {

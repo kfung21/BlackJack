@@ -1,77 +1,76 @@
 <template>
-  <div v-if="isVisible" class="modal-overlay" @click="closeModal">
-    <div class="modal-content" @click.stop>
+  <div v-if="isVisible" class="hint-modal-overlay" @click="closeModal">
+    <div class="hint-modal" @click.stop>
       <div class="modal-header">
-        <h3>🎯 Optimal Play Hint</h3>
+        <h2>Play Hint</h2>
         <button @click="closeModal" class="close-btn">✕</button>
       </div>
       
-      <div class="modal-body">
+      <div class="modal-content">
         <!-- Current Situation -->
-        <div class="situation-section">
-          <h4>Current Situation</h4>
+        <div class="hint-section">
+          <h3>Current Situation</h3>
           <div class="situation-grid">
             <div class="situation-item">
               <span class="label">Your Hand:</span>
-              <span class="value">{{ playerHandText }}</span>
+              <span class="value">{{ handValue }}</span>
             </div>
             <div class="situation-item">
               <span class="label">Dealer Shows:</span>
-              <span class="value">{{ dealerUpCardText }}</span>
+              <span class="value">{{ dealerUpCard }}</span>
             </div>
-            <div class="situation-item">
+            <div class="situation-item" v-if="showCount">
               <span class="label">True Count:</span>
-              <span class="value" :class="countClass">{{ formattedTrueCount }}</span>
+              <span class="value" :class="countClass">{{ trueCountDisplay }}</span>
             </div>
-            <div class="situation-item">
+            <div class="situation-item" v-if="showCount">
               <span class="label">Running Count:</span>
-              <span class="value">{{ formattedRunningCount }}</span>
+              <span class="value">{{ runningCount }}</span>
             </div>
           </div>
         </div>
 
-        <!-- Recommended Action -->
-        <div class="recommendation-section">
-          <div class="recommendation" :class="`rec-${recommendation.action}`">
-            <div class="rec-action">RECOMMENDED: {{ recommendation.action.toUpperCase() }}</div>
-            <div class="rec-reason">{{ recommendation.reason }}</div>
-            <div class="rec-confidence">Confidence: {{ recommendation.confidence }}</div>
+        <!-- Recommendation -->
+        <div class="recommendation-box">
+          <h3>RECOMMENDED ACTION</h3>
+          <div class="action-recommendation">{{ recommendedAction }}</div>
+          <div class="recommendation-reason">{{ recommendationReason }}</div>
+          <div class="confidence">
+            Confidence: <span class="confidence-level">{{ confidence }}</span>
           </div>
         </div>
 
-        <!-- Basic Strategy Info -->
-        <div class="strategy-section">
-          <h4>Basic Strategy</h4>
-          <p class="strategy-text">{{ basicStrategyText }}</p>
+        <!-- Basic Strategy Explanation -->
+        <div class="hint-section">
+          <h3>Basic Strategy</h3>
+          <p class="strategy-text">{{ basicStrategyExplanation }}</p>
         </div>
 
-        <!-- Count Adjustment -->
-        <div v-if="countAdjustment" class="count-section">
-          <h4>Count Adjustment</h4>
-          <p class="count-text">{{ countAdjustment }}</p>
-        </div>
-
-        <!-- Available Actions Summary -->
-        <div class="actions-section">
-          <h4>Action Summary</h4>
-          <div class="action-summary">
+        <!-- Action Summary -->
+        <div class="hint-section">
+          <h3>Action Summary</h3>
+          <div class="action-grid">
             <div 
-              v-for="action in availableActions"
-              :key="action.name"
-              :class="['action-summary-item', { 'recommended': action.recommended }]"
+              v-for="action in possibleActions" 
+              :key="action.type"
+              class="action-item"
+              :class="{ best: action.isBest, worst: action.isWorst }"
             >
-              <span class="action-name">{{ action.name.toUpperCase() }}</span>
-              <span v-if="action.recommended" class="rec-indicator">⭐ BEST</span>
-              <span v-else class="not-rec-indicator">{{ action.advice }}</span>
+              <span class="action-name">{{ action.type }}</span>
+              <span class="action-rating">{{ action.rating }}</span>
             </div>
           </div>
+        </div>
+
+        <!-- Count Adjustment (if applicable) -->
+        <div v-if="showCountAdjustment" class="hint-section">
+          <h3>Count Adjustment</h3>
+          <p class="count-advice">{{ countAdvice }}</p>
         </div>
       </div>
-      
+
       <div class="modal-footer">
-        <button @click="closeModal" class="btn btn-primary btn-large">
-          Got It! Let Me Decide
-        </button>
+        <button @click="closeModal" class="btn btn-primary">Got it!</button>
       </div>
     </div>
   </div>
@@ -80,340 +79,305 @@
 <script setup>
 import { computed } from 'vue'
 import { useGameStore } from '../stores/gameStore'
-import { useCountingStore } from '../stores/countingStore'
 import { usePlayerStore } from '../stores/playerStore'
-import { calculateHandValue } from '../utils/gameRules'
+import { useCountingStore } from '../stores/countingStore'
+import { calculateHandValue, canSplit, canDoubleDown } from '../utils/gameRules'
+import { getBotDecision } from '../utils/botStrategy'
 
 const props = defineProps({
   isVisible: {
     type: Boolean,
-    default: false
+    required: true
   }
 })
 
 const emit = defineEmits(['close'])
 
-// Store references
 const gameStore = useGameStore()
-const countingStore = useCountingStore()
 const playerStore = usePlayerStore()
+const countingStore = useCountingStore()
 
-const playerHand = computed(() => {
-  return gameStore?.currentHand?.cards || []
+const currentHand = computed(() => {
+  const player = gameStore.activeViewPlayer
+  if (!player || !player.hands || player.hands.length === 0) return null
+  
+  const handIndex = player.currentHandIndex || 0
+  return player.hands[handIndex]
 })
 
-const dealerUpCard = computed(() => {
-  return gameStore?.dealerUpCard || null
-})
-
-const playerHandValue = computed(() => {
-  return calculateHandValue(playerHand.value)
-})
-
-const playerHandText = computed(() => {
-  const value = playerHandValue.value
+const handValue = computed(() => {
+  if (!currentHand.value) return 0
+  const value = calculateHandValue(currentHand.value.cards)
   if (value.soft && value.total <= 21) {
     return `${value.total} (soft)`
   }
-  return value.total.toString()
+  return value.total
 })
 
-const dealerUpCardText = computed(() => {
-  const card = dealerUpCard.value
-  return card ? `${card.value}${getSuitSymbol(card.suit)}` : 'Unknown'
+const dealerUpCard = computed(() => {
+  const card = gameStore.dealerUpCard
+  if (!card) return '?'
+  if (card.value === 'A') return 'A'
+  if (['J', 'Q', 'K'].includes(card.value)) return '10'
+  return card.value
 })
 
-const formattedTrueCount = computed(() => {
-  const tc = countingStore?.trueCount || 0
-  return tc > 0 ? `+${tc}` : tc.toString()
+const showCount = computed(() => {
+  return playerStore.settings.showCount || playerStore.settings.showTrueCount
 })
 
-const formattedRunningCount = computed(() => {
-  const rc = countingStore?.runningCount || 0
-  return rc > 0 ? `+${rc}` : rc.toString()
+const trueCountDisplay = computed(() => {
+  return countingStore.trueCount.toFixed(1)
+})
+
+const runningCount = computed(() => {
+  return countingStore.runningCount > 0 ? `+${countingStore.runningCount}` : countingStore.runningCount.toString()
 })
 
 const countClass = computed(() => {
-  const tc = countingStore?.trueCount || 0
-  if (tc >= 2) return 'positive'
-  if (tc <= -2) return 'negative'
-  return 'neutral'
+  if (countingStore.trueCount >= 2) return 'count-positive'
+  if (countingStore.trueCount <= -2) return 'count-negative'
+  return 'count-neutral'
 })
 
-const recommendation = computed(() => {
-  return getOptimalPlay()
-})
-
-const basicStrategyText = computed(() => {
-  const playerTotal = playerHandValue.value.total
-  const dealerValue = getDealerValue()
-  const isSoft = playerHandValue.value.soft
+const recommendedAction = computed(() => {
+  if (!currentHand.value) return 'HIT'
   
-  if (isSoft) {
-    return getSoftHandStrategy(playerTotal, dealerValue)
-  } else {
-    return getHardHandStrategy(playerTotal, dealerValue)
-  }
-})
-
-const countAdjustment = computed(() => {
-  const tc = countingStore?.trueCount || 0
-  const basicAction = getBasicStrategyAction()
-  const optimalAction = recommendation.value.action
+  // Get basic strategy decision
+  let decision = getBotDecision(
+    currentHand.value,
+    gameStore.dealerUpCard,
+    playerStore.bankroll
+  )
   
-  if (basicAction !== optimalAction) {
-    if (tc >= 2) {
-      return `High count (+${tc}) suggests more aggressive play. Consider ${optimalAction} instead of ${basicAction}.`
-    } else if (tc <= -2) {
-      return `Low count (${tc}) suggests conservative play. Consider ${optimalAction} instead of ${basicAction}.`
+  // Apply count-based adjustments
+  const tc = countingStore.trueCount
+  const handVal = typeof handValue.value === 'string' ? 
+    parseInt(handValue.value) : handValue.value
+  const dealerVal = dealerUpCard.value
+  
+  // True count adjustments for close decisions
+  if (tc >= 3) {
+    // Very positive count - be more aggressive
+    if (handVal === 12 && dealerVal >= 2 && dealerVal <= 6 && decision === 'hit') {
+      decision = 'stand' // Stand on 12 vs weak dealer with high count
+    }
+    if (handVal === 16 && dealerVal === 10 && decision === 'hit') {
+      decision = 'stand' // Stand on 16 vs 10 with high count
+    }
+    if (handVal === 15 && dealerVal === 10 && decision === 'hit' && tc >= 4) {
+      decision = 'stand' // Stand on 15 vs 10 with very high count
+    }
+  } else if (tc <= -2) {
+    // Negative count - be more conservative
+    if (handVal === 12 && dealerVal === 4 && decision === 'stand') {
+      decision = 'hit' // Hit 12 vs 4 with negative count
+    }
+    if (handVal === 13 && dealerVal === 2 && decision === 'stand') {
+      decision = 'hit' // Hit 13 vs 2 with negative count
     }
   }
-  return null
+  
+  return decision.toUpperCase()
 })
 
-const availableActions = computed(() => {
+const recommendationReason = computed(() => {
+  const action = recommendedAction.value.toLowerCase()
+  const dealerVal = dealerUpCard.value
+  const handVal = typeof handValue.value === 'string' ? 
+    parseInt(handValue.value) : handValue.value
+  const tc = countingStore.trueCount
+  
+  // Check if count influenced the decision
+  if (Math.abs(tc) >= 2) {
+    if (tc >= 3 && action === 'stand' && handVal <= 16) {
+      return `High count (+${tc.toFixed(1)}) favors standing`
+    }
+    if (tc <= -2 && action === 'hit' && handVal >= 12 && handVal <= 13) {
+      return `Low count (${tc.toFixed(1)}) favors hitting`
+    }
+  }
+  
+  if (action === 'hit') {
+    if (handVal <= 11) return 'No risk of busting'
+    if (dealerVal === 'A' || dealerVal >= 9) return `Hit against strong dealer ${dealerVal}`
+    return 'Hand too weak to stand'
+  }
+  
+  if (action === 'stand') {
+    if (handVal >= 17) return 'Strong hand - avoid busting'
+    if (dealerVal >= 2 && dealerVal <= 6) return `Stand against weak dealer ${dealerVal}`
+    return 'Best odds to avoid busting'
+  }
+  
+  if (action === 'double') {
+    if (handVal === 11) return 'Always double on 11'
+    if (handVal === 10 && dealerVal !== 'A' && dealerVal !== '10') {
+      return 'Double 10 vs weak dealer'
+    }
+    return 'Favorable double down situation'
+  }
+  
+  if (action === 'split') {
+    const firstCard = currentHand.value?.cards[0]?.value
+    if (firstCard === 'A') return 'Always split aces'
+    if (firstCard === '8') return 'Always split 8s'
+    return 'Favorable split opportunity'
+  }
+  
+  return 'Based on basic strategy'
+})
+
+const confidence = computed(() => {
+  const action = recommendedAction.value.toLowerCase()
+  const handVal = typeof handValue.value === 'string' ? 
+    parseInt(handValue.value) : handValue.value
+  
+  // High confidence situations
+  if (handVal <= 11 && action === 'hit') return 'High'
+  if (handVal >= 17 && action === 'stand') return 'High'
+  if (handVal === 11 && action === 'double') return 'High'
+  if (handVal === 20 && action === 'stand') return 'High'
+  
+  // Low confidence situations
+  if (handVal === 16 && dealerUpCard.value >= 7) return 'Low'
+  if (handVal === 12 && dealerUpCard.value >= 2 && dealerUpCard.value <= 3) return 'Low'
+  
+  return 'Medium'
+})
+
+const basicStrategyExplanation = computed(() => {
+  const dealerVal = dealerUpCard.value
+  const handVal = typeof handValue.value === 'string' ? 
+    parseInt(handValue.value) : handValue.value
+  
+  if (dealerVal >= 7 || dealerVal === 'A') {
+    return `Dealer shows strong card (${dealerVal}). Be aggressive - assume dealer has 10 in hole for total of ${dealerVal === 'A' ? '21' : parseInt(dealerVal) + 10}.`
+  } else if (dealerVal >= 2 && dealerVal <= 6) {
+    return `Dealer shows weak card (${dealerVal}). Be conservative - dealer likely to bust. Let them take the risk.`
+  }
+  
+  return 'Follow basic blackjack strategy for optimal play.'
+})
+
+const possibleActions = computed(() => {
   const actions = []
-  const recAction = recommendation.value.action
+  const recommended = recommendedAction.value.toLowerCase()
   
-  actions.push({ 
-    name: 'hit', 
-    recommended: recAction === 'hit',
-    advice: recAction === 'hit' ? 'Recommended' : 'Not optimal for this situation'
+  // Always available
+  actions.push({
+    type: 'HIT',
+    rating: recommended === 'hit' ? '★ BEST' : getActionRating('hit'),
+    isBest: recommended === 'hit',
+    isWorst: false
   })
   
-  actions.push({ 
-    name: 'stand', 
-    recommended: recAction === 'stand',
-    advice: recAction === 'stand' ? 'Recommended' : 'Not optimal for this situation'
+  actions.push({
+    type: 'STAND',
+    rating: recommended === 'stand' ? '★ BEST' : getActionRating('stand'),
+    isBest: recommended === 'stand',
+    isWorst: false
   })
   
-  if (canDouble()) {
-    actions.push({ 
-      name: 'double', 
-      recommended: recAction === 'double',
-      advice: recAction === 'double' ? 'Recommended' : 'Available but not optimal'
+  // Conditionally available
+  if (canDoubleDown(currentHand.value?.cards || [], playerStore.bankroll, currentHand.value?.bet || 0)) {
+    actions.push({
+      type: 'DOUBLE',
+      rating: recommended === 'double' ? '★ BEST' : getActionRating('double'),
+      isBest: recommended === 'double',
+      isWorst: false
     })
   }
   
-  if (canSplit()) {
-    actions.push({ 
-      name: 'split', 
-      recommended: recAction === 'split',
-      advice: recAction === 'split' ? 'Recommended' : 'Available but not optimal'
+  if (canSplit(currentHand.value?.cards || [])) {
+    actions.push({
+      type: 'SPLIT',
+      rating: recommended === 'split' ? '★ BEST' : getActionRating('split'),
+      isBest: recommended === 'split',
+      isWorst: false
     })
   }
+  
+  // Mark worst action
+  const worstAction = getWorstAction()
+  actions.forEach(action => {
+    if (action.type === worstAction && !action.isBest) {
+      action.isWorst = true
+      action.rating = '✗ WORST'
+    }
+  })
   
   return actions
 })
 
-// Enhanced optimal play function that considers count
-function getOptimalPlay() {
-  const playerTotal = playerHandValue.value.total
-  const dealerValue = getDealerValue()
-  const isSoft = playerHandValue.value.soft
-  const trueCount = countingStore?.trueCount || 0
-  const canDoubleNow = canDouble()
+function getActionRating(action) {
+  const handVal = typeof handValue.value === 'string' ? 
+    parseInt(handValue.value) : handValue.value
+  const dealerVal = dealerUpCard.value
   
-  // Check for pairs first
-  if (canSplit()) {
-    const pairValue = playerHand.value[0].value
-    
-    // Always split aces and 8s
-    if (pairValue === 'A' || pairValue === '8') {
-      return { action: 'split', reason: 'Always split Aces and 8s', confidence: 'Very High' }
-    }
-    
-    // Count-based pair splitting
-    if (pairValue === '10' && trueCount >= 4 && dealerValue >= 4 && dealerValue <= 6) {
-      return { action: 'split', reason: 'Split 10s vs weak dealer with high count', confidence: 'High' }
-    }
+  if (action === 'hit') {
+    if (handVal >= 17) return 'Risky'
+    if (handVal <= 11) return 'Safe'
+    return 'OK'
   }
   
-  // SOFT HANDS
-  if (isSoft) {
-    // Soft 19-21
-    if (playerTotal >= 19) {
-      return { action: 'stand', reason: 'Strong soft total', confidence: 'Very High' }
-    }
-    
-    // Soft 18
-    if (playerTotal === 18) {
-      if (dealerValue >= 9 || dealerValue === 1) {
-        return { action: 'hit', reason: 'Hit soft 18 vs strong dealer', confidence: 'High' }
-      }
-      if (canDoubleNow && dealerValue >= 3 && dealerValue <= 6) {
-        return { action: 'double', reason: 'Double soft 18 vs weak dealer', confidence: 'High' }
-      }
-      return { action: 'stand', reason: 'Stand soft 18', confidence: 'High' }
-    }
-    
-    // Soft 17 and below
-    if (canDoubleNow && dealerValue >= 3 && dealerValue <= 6) {
-      return { action: 'double', reason: 'Double soft hand vs weak dealer', confidence: 'High' }
-    }
-    return { action: 'hit', reason: 'Hit soft 17 or less', confidence: 'High' }
+  if (action === 'stand') {
+    if (handVal >= 17) return 'Good'
+    if (handVal <= 11) return 'Bad'
+    return 'OK'
   }
   
-  // HARD HANDS WITH COUNT ADJUSTMENTS
-  
-  // Hard 11
-  if (playerTotal === 11) {
-    if (canDoubleNow) {
-      // With positive count, double even vs Ace
-      if (trueCount >= 1 || dealerValue !== 1) {
-        return { action: 'double', reason: 'Double 11 - best doubling hand', confidence: 'Very High' }
-      }
-    }
-    return { action: 'hit', reason: 'Hit 11 (can\'t double)', confidence: 'High' }
+  if (action === 'double') {
+    if (handVal === 11) return 'Excellent'
+    if (handVal === 10 && dealerVal !== 'A') return 'Good'
+    return 'Risky'
   }
   
-  // Hard 10
-  if (playerTotal === 10) {
-    if (canDoubleNow) {
-      // Double vs 2-9 always, vs 10/A with positive count
-      if (dealerValue <= 9 || (trueCount >= 4 && dealerValue === 10)) {
-        return { action: 'double', reason: 'Double 10 vs ' + dealerValue, confidence: 'Very High' }
-      }
-    }
-    return { action: 'hit', reason: 'Hit 10', confidence: 'High' }
+  if (action === 'split') {
+    const firstCard = currentHand.value?.cards[0]?.value
+    if (firstCard === 'A' || firstCard === '8') return 'Always'
+    if (firstCard === '5' || firstCard === '10') return 'Never'
+    return 'Situational'
   }
   
-  // Hard 9
-  if (playerTotal === 9) {
-    if (canDoubleNow && dealerValue >= 3 && dealerValue <= 6) {
-      // With high count, also double vs 2
-      if (dealerValue >= 3 || trueCount >= 3) {
-        return { action: 'double', reason: 'Double 9 vs weak dealer', confidence: 'High' }
-      }
-    }
-    return { action: 'hit', reason: 'Hit 9', confidence: 'High' }
-  }
-  
-  // Hard 16
-  if (playerTotal === 16) {
-    // Stand vs 10 with positive count
-    if (dealerValue === 10 && trueCount >= 0) {
-      return { action: 'stand', reason: 'Stand 16 vs 10 with count >= 0', confidence: 'Medium' }
-    }
-    // Stand vs weak dealer
-    if (dealerValue >= 2 && dealerValue <= 6) {
-      return { action: 'stand', reason: 'Stand 16 vs weak dealer', confidence: 'High' }
-    }
-    return { action: 'hit', reason: 'Hit 16 vs strong dealer', confidence: 'Medium' }
-  }
-  
-  // Hard 15
-  if (playerTotal === 15) {
-    // Stand vs 10 with high count
-    if (dealerValue === 10 && trueCount >= 4) {
-      return { action: 'stand', reason: 'Stand 15 vs 10 with TC +4', confidence: 'Medium' }
-    }
-    if (dealerValue >= 2 && dealerValue <= 6) {
-      return { action: 'stand', reason: 'Stand 15 vs weak dealer', confidence: 'High' }
-    }
-    return { action: 'hit', reason: 'Hit 15 vs strong dealer', confidence: 'High' }
-  }
-  
-  // Hard 13-14
-  if (playerTotal >= 13 && playerTotal <= 14) {
-    if (dealerValue >= 2 && dealerValue <= 6) {
-      return { action: 'stand', reason: 'Stand stiff hand vs weak dealer', confidence: 'High' }
-    }
-    return { action: 'hit', reason: 'Hit stiff hand vs strong dealer', confidence: 'High' }
-  }
-  
-  // Hard 12
-  if (playerTotal === 12) {
-    // Hit 12 vs 2/3 with negative count
-    if ((dealerValue === 2 || dealerValue === 3) && trueCount < -1) {
-      return { action: 'hit', reason: 'Hit 12 vs 2/3 with negative count', confidence: 'Medium' }
-    }
-    if (dealerValue >= 4 && dealerValue <= 6) {
-      return { action: 'stand', reason: 'Stand 12 vs weak dealer', confidence: 'High' }
-    }
-    return { action: 'hit', reason: 'Hit 12 vs strong dealer', confidence: 'High' }
-  }
-  
-  // Hard 17+
-  if (playerTotal >= 17) {
-    return { action: 'stand', reason: 'Stand on hard 17+', confidence: 'Very High' }
-  }
-  
-  // Hard 8 and below
-  if (playerTotal <= 8) {
-    return { action: 'hit', reason: 'Always hit 8 or less', confidence: 'Very High' }
-  }
-  
-  // Default
-  return { action: 'hit', reason: 'Default action', confidence: 'Low' }
+  return 'Not optimal'
 }
 
-function getBasicStrategyAction() {
-  const playerTotal = playerHandValue.value.total
-  const dealerValue = getDealerValue()
-  const isSoft = playerHandValue.value.soft
+function getWorstAction() {
+  const handVal = typeof handValue.value === 'string' ? 
+    parseInt(handValue.value) : handValue.value
   
-  if (playerTotal >= 17) return 'stand'
-  if (playerTotal <= 11) return canDouble() && playerTotal >= 9 ? 'double' : 'hit'
-  if (playerTotal >= 12 && playerTotal <= 16) {
-    return dealerValue >= 7 ? 'hit' : 'stand'
-  }
-  return 'hit'
-}
-
-function getSoftHandStrategy(total, dealerValue) {
-  if (total >= 19) return 'Stand - strong soft total'
-  if (total === 18) return 'Soft 18 - double vs 3-6, stand vs 2,7,8, hit vs 9,10,A'
-  if (total <= 17) return 'Hit soft 17 or less, double vs weak dealer if possible'
-  return 'Follow basic strategy chart'
-}
-
-function getHardHandStrategy(total, dealerValue) {
-  if (total >= 17) return 'Stand - hard 17 or higher'
-  if (total === 11) return 'Double if possible - best doubling hand'
-  if (total === 10) return 'Double vs 2-9, hit vs 10/A'
-  if (total === 9) return 'Double vs 3-6, hit otherwise'
-  if (total <= 8) return 'Hit - cannot bust'
-  if (total >= 12 && total <= 16) {
-    return dealerValue >= 7 ? 'Hit vs strong dealer' : 'Stand vs weak dealer (2-6)'
-  }
-  return 'Follow basic strategy chart'
-}
-
-function getDealerValue() {
-  const card = dealerUpCard.value
-  if (!card) return 10
-  if (card.value === 'A') return 1
-  if (['J', 'Q', 'K'].includes(card.value)) return 10
-  return parseInt(card.value) || 10
-}
-
-function canDouble() {
-  return gameStore?.currentHand?.cards.length === 2 && 
-         (playerStore?.bankroll || 0) >= (gameStore?.currentHand?.bet || 0)
-}
-
-function canSplit() {
-  const hand = gameStore?.currentHand
-  if (!hand || hand.cards.length !== 2) return false
+  if (handVal >= 17) return 'HIT'
+  if (handVal <= 11) return 'STAND'
   
-  const card1Value = hand.cards[0].value
-  const card2Value = hand.cards[1].value
+  // For splits, 5s and 10s are usually worst
+  if (canSplit(currentHand.value?.cards || [])) {
+    const firstCard = currentHand.value?.cards[0]?.value
+    if (firstCard === '5' || firstCard === '10') return 'SPLIT'
+  }
   
-  const getValue = (card) => ['J', 'Q', 'K'].includes(card) ? '10' : card
-  return getValue(card1Value) === getValue(card2Value) && 
-         (playerStore?.bankroll || 0) >= (hand.bet || 0)
+  return 'STAND' // Default worst for middle hands
 }
 
-function getSuitSymbol(suit) {
-  const symbols = {
-    hearts: '♥',
-    diamonds: '♦',
-    clubs: '♣',
-    spades: '♠'
+const showCountAdjustment = computed(() => {
+  return showCount.value && Math.abs(countingStore.trueCount) >= 2
+})
+
+const countAdvice = computed(() => {
+  const tc = countingStore.trueCount
+  
+  if (tc >= 3) {
+    return 'Very positive count (+3 or higher). Consider increasing bet size and taking insurance if offered.'
+  } else if (tc >= 2) {
+    return 'Positive count. Slightly favor standing on close decisions.'
+  } else if (tc <= -3) {
+    return 'Very negative count (-3 or lower). Consider minimum bets only.'
+  } else if (tc <= -2) {
+    return 'Negative count. Slightly favor hitting on close decisions.'
   }
-  return symbols[suit] || ''
-}
+  
+  return 'Neutral count. Follow basic strategy.'
+})
 
 function closeModal() {
   emit('close')
@@ -421,257 +385,260 @@ function closeModal() {
 </script>
 
 <style scoped>
-.modal-overlay {
+.hint-modal-overlay {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
   background: rgba(0, 0, 0, 0.8);
+  z-index: 2000;
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 2000;
   padding: 16px;
 }
 
-.modal-content {
+.hint-modal {
   background: linear-gradient(135deg, #1a5490 0%, #0f4c75 100%);
   border-radius: 16px;
-  max-width: 400px;
   width: 100%;
-  max-height: 90vh;
-  overflow-y: auto;
+  max-width: 500px;
+  height: auto;
+  max-height: 95vh;
+  display: flex;
+  flex-direction: column;
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
 }
 
 .modal-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 20px 24px 16px;
+  padding: 16px 20px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  flex-shrink: 0;
 }
 
-.modal-header h3 {
-  color: white;
+.modal-header h2 {
   margin: 0;
+  color: white;
   font-size: 20px;
 }
 
 .close-btn {
-  background: none;
-  border: none;
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 24px;
-  cursor: pointer;
-  padding: 0;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: white;
   width: 32px;
   height: 32px;
+  border-radius: 50%;
+  font-size: 18px;
+  cursor: pointer;
+  transition: all 0.2s ease;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 50%;
-  transition: all 0.2s ease;
 }
 
 .close-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.2);
+  transform: rotate(90deg);
+}
+
+.modal-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  overflow: hidden; /* Prevent scrolling */
+}
+
+.hint-section {
+  margin-bottom: 16px;
+}
+
+.hint-section:last-child {
+  margin-bottom: 0;
+}
+
+.hint-section h3 {
   color: white;
-}
-
-.modal-body {
-  padding: 16px 24px;
-}
-
-.situation-section,
-.recommendation-section,
-.strategy-section,
-.count-section,
-.actions-section {
-  margin-bottom: 20px;
-}
-
-.situation-section h4,
-.strategy-section h4,
-.count-section h4,
-.actions-section h4 {
-  color: white;
-  margin: 0 0 12px 0;
+  margin: 0 0 8px 0;
   font-size: 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  padding-bottom: 4px;
 }
 
 .situation-grid {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: 1fr 1fr;
   gap: 8px;
 }
 
 .situation-item {
-  display: flex;
-  justify-content: space-between;
-  padding: 8px 12px;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.2);
+  padding: 10px;
   border-radius: 8px;
 }
 
-.label {
-  color: rgba(255, 255, 255, 0.8);
-  font-size: 14px;
+.situation-item .label {
+  display: block;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 11px;
+  margin-bottom: 2px;
 }
 
-.value {
+.situation-item .value {
+  display: block;
   color: white;
-  font-weight: 600;
-  font-size: 14px;
+  font-size: 18px;
+  font-weight: bold;
 }
 
-.value.positive {
-  color: #34a853;
-}
+.count-positive { color: #34a853 !important; }
+.count-negative { color: #f44336 !important; }
+.count-neutral { color: #2196f3 !important; }
 
-.value.negative {
-  color: #f44336;
-}
-
-.value.neutral {
-  color: #ff9800;
-}
-
-.recommendation {
-  background: rgba(255, 255, 255, 0.1);
+.recommendation-box {
+  background: linear-gradient(145deg, #2196f3 0%, #1976d2 100%);
   border-radius: 12px;
   padding: 16px;
   text-align: center;
-  border: 2px solid;
+  margin-bottom: 16px;
 }
 
-.rec-hit {
-  border-color: #2196f3;
-  background: rgba(33, 150, 243, 0.1);
-}
-
-.rec-stand {
-  border-color: #ff9800;
-  background: rgba(255, 152, 0, 0.1);
-}
-
-.rec-double {
-  border-color: #34a853;
-  background: rgba(52, 168, 83, 0.1);
-}
-
-.rec-split {
-  border-color: #9c27b0;
-  background: rgba(156, 39, 176, 0.1);
-}
-
-.rec-action {
-  font-size: 20px;
-  font-weight: bold;
-  color: white;
-  margin-bottom: 8px;
-}
-
-.rec-reason {
-  color: rgba(255, 255, 255, 0.9);
-  font-size: 14px;
-  margin-bottom: 4px;
-}
-
-.rec-confidence {
-  color: rgba(255, 255, 255, 0.7);
+.recommendation-box h3 {
+  margin: 0 0 8px 0;
   font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
 }
 
-.strategy-text,
-.count-text {
-  color: rgba(255, 255, 255, 0.8);
+.action-recommendation {
+  font-size: 28px;
+  font-weight: bold;
+  margin-bottom: 6px;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.recommendation-reason {
   font-size: 14px;
-  line-height: 1.5;
+  margin-bottom: 8px;
+  opacity: 0.9;
+}
+
+.confidence {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.confidence-level {
+  font-weight: bold;
+  text-transform: uppercase;
+}
+
+.strategy-text {
+  color: rgba(255, 255, 255, 0.9);
+  line-height: 1.4;
   margin: 0;
+  font-size: 14px;
 }
 
-.action-summary {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+.action-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: 6px;
 }
 
-.action-summary-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 8px 12px;
-  background: rgba(255, 255, 255, 0.1);
+.action-item {
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  padding: 8px;
   border-radius: 8px;
-  border-left: 4px solid transparent;
+  text-align: center;
+  transition: all 0.2s ease;
 }
 
-.action-summary-item.recommended {
-  border-left-color: #ffd700;
-  background: rgba(255, 215, 0, 0.1);
+.action-item.best {
+  background: rgba(52, 168, 83, 0.2);
+  border-color: #34a853;
+}
+
+.action-item.worst {
+  background: rgba(244, 67, 54, 0.2);
+  border-color: #f44336;
 }
 
 .action-name {
-  font-weight: 600;
-  color: white;
-}
-
-.rec-indicator {
-  color: #ffd700;
+  display: block;
   font-weight: bold;
-  font-size: 12px;
+  color: white;
+  margin-bottom: 2px;
+  font-size: 14px;
 }
 
-.not-rec-indicator {
-  color: rgba(255, 255, 255, 0.6);
-  font-size: 12px;
+.action-rating {
+  display: block;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.count-advice {
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(0, 0, 0, 0.2);
+  padding: 10px;
+  border-radius: 8px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
 }
 
 .modal-footer {
-  padding: 16px 24px 20px;
+  padding: 12px 20px;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
-  text-align: center;
-}
-
-.btn {
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  font-family: inherit;
+  flex-shrink: 0;
 }
 
 .btn-primary {
+  width: 100%;
+  padding: 12px;
   background: linear-gradient(145deg, #34a853 0%, #2d8659 100%);
   color: white;
-}
-
-.btn-large {
-  padding: 16px 32px;
+  border: none;
+  border-radius: 8px;
   font-size: 16px;
-  font-weight: bold;
-  width: 100%;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
 }
 
+.btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(52, 168, 83, 0.3);
+}
+
+/* Mobile responsiveness */
 @media (max-width: 480px) {
+  .hint-modal {
+    max-height: 100vh;
+    height: 100vh;
+    max-width: 100%;
+    border-radius: 0;
+  }
+  
   .modal-content {
-    margin: 8px;
-    max-height: 95vh;
+    padding: 12px;
   }
   
-  .modal-header,
-  .modal-body,
-  .modal-footer {
-    padding-left: 16px;
-    padding-right: 16px;
+  .modal-header {
+    padding: 12px 16px;
   }
   
-  .situation-grid {
-    grid-template-columns: 1fr;
+  .recommendation-box {
+    padding: 12px;
+  }
+  
+  .action-recommendation {
+    font-size: 24px;
   }
 }
 </style>

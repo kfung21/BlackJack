@@ -329,9 +329,9 @@ const canRemovePlayer = computed(() => (player) => {
 
 const canTogglePlayerType = computed(() => (player) => {
   // Can toggle type anytime, but not for main player
-  // If it's their turn and we toggle to human, they can play immediately
-  // If we toggle to bot during their turn, bot will take over
-  return !player.isMainPlayer
+  // FIXED: Don't allow toggling during the player's active turn
+  const isPlayersTurn = gameStore.currentPlayer?.id === player.id && gameStore.gamePhase === 'playing'
+  return !player.isMainPlayer && !isPlayersTurn
 })
 
 function toggleRoster() {
@@ -459,7 +459,7 @@ function viewPlayerCards(player) {
   console.log(`Player hands:`, player.hands)
   gameStore.setActiveViewPlayer(player.id)
   
-  // Force a small delay to ensure reactivity
+  // Force update of the player hands display
   nextTick(() => {
     console.log(`View should now show player: ${gameStore.activeViewPlayerId}`)
   })
@@ -474,29 +474,6 @@ function togglePlayerType(player) {
   
   // Update avatar
   player.avatar = player.type === 'bot' ? '🤖' : '👤'
-  
-  // If we're switching TO bot control and it's currently this player's turn
-  if (!wasBot && gameStore.currentPlayer?.id === player.id && gameStore.gamePhase === 'playing') {
-    console.log(`${player.name} switched to bot control - bot will take over`)
-    
-    // Switch view to this player so we can see the bot play
-    gameStore.setActiveViewPlayer(player.id)
-    
-    // Give a brief delay then let the bot play
-    setTimeout(() => {
-      if (gameStore.currentPlayer?.id === player.id) {
-        gameStore.playBotTurn(player)
-      }
-    }, 500)
-  }
-  
-  // If we're switching TO human control and it's their turn
-  if (wasBot && gameStore.currentPlayer?.id === player.id && gameStore.gamePhase === 'playing') {
-    console.log(`${player.name} switched to human control - waiting for input`)
-    // Switch view to this player
-    gameStore.setActiveViewPlayer(player.id)
-    gameStore.message = `${player.name}'s turn (now human controlled)`
-  }
   
   // Save the state
   gameStore.saveCurrentGameState()
