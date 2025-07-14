@@ -140,7 +140,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { usePlayerStore } from '../stores/playerStore'
 import { useGameStore } from '../stores/gameStore'
 import { useCountingStore } from '../stores/countingStore'
@@ -160,6 +160,7 @@ const countingStore = useCountingStore()
 const showInsurance = ref(false)
 const showHintModal = ref(false)
 const showBottomNav = ref(false)
+const processedCards = ref(new Set()) // Track cards already counted
 
 const messageClass = computed(() => {
   if (gameStore.message.includes('won')) return 'message-win'
@@ -206,36 +207,91 @@ onMounted(async () => {
   await addVisibleCardsToCount()
 })
 
-watch(() => gameStore.dealerHand, () => {
+// Watch for dealer hand changes and add to count (avoid double counting)
+watch(() => gameStore.dealerHand, (newHand, oldHand) => {
+  console.log('Dealer hand changed, updating count...')
   addVisibleCardsToCount()
+  // Force reactivity update
+  nextTick(() => {
+    console.log(`Current running count after dealer update: ${countingStore.runningCount}`)
+  })
 }, { deep: true })
 
-watch(() => gameStore.playerHands, () => {
+// Watch for player hand changes and add to count (avoid double counting)
+watch(() => gameStore.playerHands, (newHands, oldHands) => {
+  console.log('Player hands changed, updating count...')
   addVisibleCardsToCount()
+  // Force reactivity update
+  nextTick(() => {
+    console.log(`Current running count after player update: ${countingStore.runningCount}`)
+  })
 }, { deep: true })
 
+// Reset count tracking when new round starts
 watch(() => gameStore.gamePhase, (newPhase) => {
   if (newPhase === 'finished') {
     countingStore.resetRound()
+  } else if (newPhase === 'betting') {
+    // Reset processed cards tracking for new round
+    processedCards.value.clear()
   }
 })
 
 async function addVisibleCardsToCount() {
-  // Add all visible cards to count
-  const allCards = [
-    ...gameStore.dealerHand.filter(card => !card.faceDown),
-    ...gameStore.playerHands.flatMap(hand => hand.cards)
-  ]
+  // Get all visible cards - STRICTLY exclude face-down cards
+  const dealerVisibleCards = gameStore.dealerHand.filter(card => !card.faceDown && card.faceDown !== true)
+  const playerCards = gameStore.playerHands.flatMap(hand => hand.cards)
+  const allCards = [...dealerVisibleCards, ...playerCards]
   
+  console.log(`=== COUNTING DEBUG ===`)
+  console.log(`Dealer cards: ${gameStore.dealerHand.length}, Visible: ${dealerVisibleCards.length}`)
+  console.log(`Player cards: ${playerCards.length}`)
+  console.log(`All visible cards to check: ${allCards.length}`)
+  
+  // Only count cards we haven't seen before
   for (const card of allCards) {
-    countingStore.addCard(card)
+    const cardId = card.id || `${card.suit}-${card.value}-${card.deck}`
+    console.log(`Checking card: ${card.value}${getSuitSymbol(card.suit)} (${cardId}), faceDown: ${card.faceDown}`)
+    
+    if (!processedCards.value.has(cardId)) {
+      const countValue = countingStore.addCard(card)
+      processedCards.value.add(cardId)
+      
+      // Log ALL cards being processed, not just non-zero
+      console.log(`✓ Added card to count: ${card.value}${getSuitSymbol(card.suit)} (${countValue > 0 ? '+' : ''}${countValue}) - NEW COUNT: ${countingStore.runningCount}`)
+    } else {
+      console.log(`⏭ Skipped card (already counted): ${card.value}${getSuitSymbol(card.suit)}`)
+    }
   }
+  
+  console.log(`Final running count: ${countingStore.runningCount}`)
+  console.log(`=== END COUNTING DEBUG ===`)
+}
+
+function getSuitSymbol(suit) {
+  const symbols = {
+    hearts: '♥',
+    diamonds: '♦',
+    clubs: '♣',
+    spades: '♠'
+  }
+  return symbols[suit] || ''
 }
 
 function getCardValue(card) {
   if (['J', 'Q', 'K'].includes(card.value)) return 10
   if (card.value === 'A') return 11
   return parseInt(card.value)
+}
+
+// Fixed: Add the missing onCardClick function
+function onCardClick(card, handIndex) {
+  // This function can be used for card interactions
+  // For now, just log the clicked card
+  console.log(`Card clicked: ${card.value} of ${card.suit} in hand ${handIndex}`)
+  
+  // You can add card interaction logic here if needed
+  // For example, highlighting cards, showing card info, etc.
 }
 
 async function hit() {
@@ -256,21 +312,30 @@ async function split() {
 
 function newShoe() {
   // Reset everything - fresh shoe with full decks
+  console.log('=== NEW SHOE CLICKED ===')
   gameStore.createNewDeck()
-  countingStore.newShoe()
+  countingStore.newShoe() // This should reset count for balanced systems
   gameStore.resetGame()
+  processedCards.value.clear() // Clear processed cards tracking
   console.log('New shoe started - fresh decks and reset count')
+  console.log(`Running count after new shoe: ${countingStore.runningCount}`)
+  console.log('=== END NEW SHOE ===')
 }
 
 function newGame() {
+  console.log('=== NEW GAME CLICKED ===')
   gameStore.resetGame()
-  countingStore.resetRound()
+  countingStore.resetRound() // Only reset round, not full count
+  processedCards.value.clear() // Clear processed cards tracking for new game
+  console.log(`Running count after new game: ${countingStore.runningCount}`)
+  console.log('=== END NEW GAME ===')
 }
 
 function sameBet() {
   if (canUseSameBet.value) {
     gameStore.resetGame()
     countingStore.resetRound()
+    processedCards.value.clear() // Clear processed cards tracking
     // Small delay to ensure game is reset before placing bet
     setTimeout(() => {
       gameStore.placeBet(gameStore.lastBet)

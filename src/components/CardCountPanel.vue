@@ -38,6 +38,12 @@
         </div>
       </div>
       
+      <div class="count-debug" v-if="showDebug">
+        <div class="debug-item">Cards Seen: {{ countingStore.totalCardsSeen }}</div>
+        <div class="debug-item">Cards This Round: {{ countingStore.cardsSeenThisRound.length }}</div>
+        <div class="debug-item">System: {{ countingStore.currentSystem.name }}</div>
+      </div>
+      
       <div class="count-actions">
         <button @click="countingStore.resetCount" class="btn btn-small">
           Reset
@@ -45,13 +51,16 @@
         <button @click="countingStore.newShoe" class="btn btn-small">
           New Shoe
         </button>
+        <button @click="showDebug = !showDebug" class="btn btn-small">
+          {{ showDebug ? 'Hide' : 'Debug' }}
+        </button>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { usePlayerStore } from '../stores/playerStore'
 import { useCountingStore } from '../stores/countingStore'
 
@@ -59,16 +68,23 @@ const playerStore = usePlayerStore()
 const countingStore = useCountingStore()
 
 const isExpanded = ref(false)
+const showDebug = ref(false)
+
+// Force reactivity by explicitly watching the store values
+const runningCount = computed(() => countingStore.runningCount)
+const trueCount = computed(() => countingStore.trueCount)
 
 const runningCountClass = computed(() => {
-  if (countingStore.runningCount > 0) return 'positive'
-  if (countingStore.runningCount < 0) return 'negative'
+  const count = runningCount.value
+  if (count > 0) return 'positive'
+  if (count < 0) return 'negative'
   return 'neutral'
 })
 
 const trueCountClass = computed(() => {
-  if (countingStore.trueCount > 1) return 'positive'
-  if (countingStore.trueCount < -1) return 'negative'
+  const count = trueCount.value
+  if (count > 1) return 'positive'
+  if (count < -1) return 'negative'
   return 'neutral'
 })
 
@@ -90,6 +106,15 @@ function formatCount(count) {
 function toggleExpanded() {
   isExpanded.value = !isExpanded.value
 }
+
+// Debug: Watch for changes to help troubleshoot
+watch(() => countingStore.runningCount, (newCount, oldCount) => {
+  console.log(`CardCountPanel: Running count changed from ${oldCount} to ${newCount}`)
+}, { immediate: true })
+
+watch(() => countingStore.trueCount, (newCount, oldCount) => {
+  console.log(`CardCountPanel: True count changed from ${oldCount} to ${newCount}`)
+}, { immediate: true })
 </script>
 
 <style scoped>
@@ -221,6 +246,19 @@ function toggleExpanded() {
 
 .level-neutral {
   color: #9e9e9e;
+}
+
+.count-debug {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+  padding: 8px;
+  margin-bottom: 8px;
+  font-size: 11px;
+}
+
+.debug-item {
+  color: rgba(255, 255, 255, 0.8);
+  margin-bottom: 2px;
 }
 
 .count-actions {

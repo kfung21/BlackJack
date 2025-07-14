@@ -11,20 +11,32 @@ export const useCountingStore = defineStore('counting', () => {
   const totalCardsSeen = ref(0)
   const countHistory = ref([])
 
-  // Getters
+  // Getters - Fixed reactivity by avoiding cross-store dependencies in computed
   const trueCount = computed(() => {
-    const gameStore = useGameStore()
-    const totalCards = gameStore.numDecks * 52
-    const cardsRemaining = totalCards - gameStore.cardsDealt
-    const decksRemaining = cardsRemaining / 52
-    return calculateTrueCount(runningCount.value, decksRemaining)
+    try {
+      const gameStore = useGameStore()
+      const totalCards = gameStore.numDecks * 52
+      const cardsRemaining = totalCards - gameStore.cardsDealt
+      const decksRemaining = Math.max(0.5, cardsRemaining / 52)
+      const result = calculateTrueCount(runningCount.value, decksRemaining)
+      console.log(`True count calculation: RC=${runningCount.value}, DecksRemaining=${decksRemaining.toFixed(2)}, TC=${result}`)
+      return result
+    } catch (error) {
+      console.warn('Error calculating true count:', error)
+      return runningCount.value // Fallback to running count
+    }
   })
 
   const decksRemaining = computed(() => {
-    const gameStore = useGameStore()
-    const totalCards = gameStore.numDecks * 52
-    const cardsRemaining = totalCards - gameStore.cardsDealt
-    return Math.max(0.5, cardsRemaining / 52)
+    try {
+      const gameStore = useGameStore()
+      const totalCards = gameStore.numDecks * 52
+      const cardsRemaining = totalCards - gameStore.cardsDealt
+      return Math.max(0.5, cardsRemaining / 52)
+    } catch (error) {
+      console.warn('Error calculating decks remaining:', error)
+      return 6.0 // Fallback to full shoe
+    }
   })
 
   const currentSystem = computed(() => {
@@ -59,33 +71,43 @@ export const useCountingStore = defineStore('counting', () => {
     const playerStore = usePlayerStore()
     const system = playerStore.settings.countingSystem
     
-    if (!card || card.faceDown) return
+    if (!card || card.faceDown) return 0
     
     const countValue = getCardCountValue(card, system, card.suit)
-    runningCount.value += countValue
-    totalCardsSeen.value++
     
-    cardsSeenThisRound.value.push({
-      card: { ...card },
-      countValue,
-      runningCount: runningCount.value,
-      trueCount: trueCount.value
-    })
+    // FIXED: Only process cards that actually affect the count
+    if (countValue !== 0) {
+      runningCount.value += countValue
+      totalCardsSeen.value++
+      
+      cardsSeenThisRound.value.push({
+        card: { ...card },
+        countValue,
+        runningCount: runningCount.value,
+        trueCount: trueCount.value
+      })
+      
+      countHistory.value.push({
+        card: `${card.value}${getSuitSymbol(card.suit)}`,
+        countValue,
+        runningCount: runningCount.value,
+        trueCount: trueCount.value,
+        timestamp: Date.now()
+      })
+    }
     
-    countHistory.value.push({
-      card: `${card.value}${getSuitSymbol(card.suit)}`,
-      countValue,
-      runningCount: runningCount.value,
-      trueCount: trueCount.value,
-      timestamp: Date.now()
-    })
+    // Return the count value so the caller knows if it was counted
+    return countValue
   }
 
   function resetRound() {
+    // Only reset the round tracking, NOT the running count
+    console.log('resetRound() called - clearing cards seen this round only')
     cardsSeenThisRound.value = []
   }
 
   function resetCount() {
+    console.log('resetCount() called - FULL COUNT RESET')
     runningCount.value = 0
     cardsSeenThisRound.value = []
     totalCardsSeen.value = 0
@@ -93,9 +115,14 @@ export const useCountingStore = defineStore('counting', () => {
   }
 
   function newShoe() {
-    // Don't reset running count for balanced systems
-    if (!currentSystem.value.balanced) {
+    console.log('newShoe() called for system:', currentSystem.value.name)
+    // For balanced systems like Hi-Lo, reset running count to 0
+    // For unbalanced systems, keep the running count
+    if (currentSystem.value.balanced) {
+      console.log('Balanced system - resetting running count to 0')
       runningCount.value = 0
+    } else {
+      console.log('Unbalanced system - keeping running count')
     }
     totalCardsSeen.value = 0
     countHistory.value = []

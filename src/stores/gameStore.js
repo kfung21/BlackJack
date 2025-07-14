@@ -89,6 +89,10 @@ export const useGameStore = defineStore('game', () => {
     currentBet.value = amount
     totalBet.value = amount
     lastBet.value = amount // Store for next game
+    
+    // FIXED: Don't deduct money here - only deduct when game finishes based on outcome
+    console.log(`Bet placed: $${amount} - Money will be deducted based on game outcome`)
+    
     gamePhase.value = 'dealing'
     startDealing()
     return true
@@ -187,9 +191,13 @@ export const useGameStore = defineStore('game', () => {
       return
     }
     
+    // Double the bet for this hand
+    const additionalBet = hand.bet
     hand.bet *= 2
     hand.doubled = true
-    totalBet.value += hand.bet / 2
+    totalBet.value += additionalBet
+    
+    console.log(`Doubled down - additional bet: $${additionalBet}, new hand bet: $${hand.bet}`)
     
     await animatedDeal(hand, 1)
     
@@ -220,7 +228,9 @@ export const useGameStore = defineStore('game', () => {
     }
     
     playerHands.value.splice(currentHandIndex.value + 1, 0, newHand)
-    totalBet.value += hand.bet
+    totalBet.value += hand.bet // Add additional bet for split hand
+    
+    console.log(`Split hand - additional bet: $${hand.bet}, total bet now: $${totalBet.value}`)
     
     // Deal one card to each hand
     await animatedDeal(hand, 1)
@@ -294,15 +304,38 @@ export const useGameStore = defineStore('game', () => {
       }
     }
     
-    // Calculate total payout
+    // FIXED: Calculate total payout correctly
     let totalPayout = 0
+    console.log('=== PAYOUT CALCULATION DEBUG ===')
+    console.log('Total bet placed:', totalBet.value)
+    
     for (const hand of playerHands.value) {
       const multiplier = getPayoutMultiplier(hand.outcome)
-      const payout = hand.bet * multiplier
-      totalPayout += payout + (multiplier >= 0 ? hand.bet : 0)
+      console.log(`Hand outcome: ${hand.outcome}, multiplier: ${multiplier}, bet: ${hand.bet}`)
+      
+      // Calculate winnings based on outcome
+      let handPayout = 0
+      if (hand.outcome === 'blackjack') {
+        handPayout = hand.bet * 1.5 // Blackjack pays 3:2
+      } else if (hand.outcome === 'win') {
+        handPayout = hand.bet // Win pays 1:1
+      } else if (hand.outcome === 'push') {
+        handPayout = 0 // Push returns bet (no gain/loss)
+      } else if (hand.outcome === 'lose') {
+        handPayout = -hand.bet // Loss loses the bet
+      }
+      
+      console.log(`Hand payout: ${handPayout}`)
+      totalPayout += handPayout
     }
     
-    const netResult = totalPayout - totalBet.value
+    console.log('Total payout calculated:', totalPayout)
+    console.log('Net result (what gets added to bankroll):', totalPayout)
+    console.log('=== END PAYOUT DEBUG ===')
+    
+    // FIXED: The totalPayout already includes the win/loss calculation
+    // Don't subtract totalBet again since losses are already negative
+    const netResult = totalPayout
     await playerStore.updateBankroll(netResult)
     
     // Save game result
