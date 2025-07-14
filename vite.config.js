@@ -7,45 +7,16 @@ export default defineConfig({
     vue(),
     VitePWA({
       registerType: 'autoUpdate',
-      strategies: 'generateSW',
       workbox: {
-        // Offline-first strategy
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,ttf}'],
+        // Basic offline-first configuration that works on Netlify
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         
-        // Cache all navigation requests
+        // Navigation fallback for SPA routing
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/_/, /\/[^/?]+\.[^/]+$/],
         
-        // Aggressive caching for offline-first
+        // Simple runtime caching without complex functions
         runtimeCaching: [
-          // App Shell - Cache First (offline-first)
-          {
-            urlPattern: /^https:\/\/.*\.(?:js|css|html)$/,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'app-shell-cache',
-              expiration: {
-                maxEntries: 60,
-                maxAgeSeconds: 60 * 60 * 24 * 30 // 30 days
-              },
-              cacheKeyWillBeUsed: async ({ request }) => request.url
-            }
-          },
-          
-          // Images - Cache First
-          {
-            urlPattern: /^https:\/\/.*\.(?:png|jpg|jpeg|svg|gif|webp|ico)$/,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'images-cache',
-              expiration: {
-                maxEntries: 100,
-                maxAgeSeconds: 60 * 60 * 24 * 90 // 90 days
-              }
-            }
-          },
-          
-          // Fonts - Cache First
           {
             urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
             handler: 'CacheFirst',
@@ -53,11 +24,10 @@ export default defineConfig({
               cacheName: 'google-fonts-stylesheets',
               expiration: {
                 maxEntries: 10,
-                maxAgeSeconds: 60 * 60 * 24 * 365 // 1 year
+                maxAgeSeconds: 60 * 60 * 24 * 365
               }
             }
           },
-          
           {
             urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
             handler: 'CacheFirst',
@@ -65,72 +35,40 @@ export default defineConfig({
               cacheName: 'google-fonts-webfonts',
               expiration: {
                 maxEntries: 30,
-                maxAgeSeconds: 60 * 60 * 24 * 365 // 1 year
+                maxAgeSeconds: 60 * 60 * 24 * 365
               }
             }
           },
-          
-          // API calls - Network First with fallback
           {
-            urlPattern: /^https:\/\/api\..*/i,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'api-cache',
-              networkTimeoutSeconds: 10,
-              expiration: {
-                maxEntries: 50,
-                maxAgeSeconds: 60 * 60 * 24 // 24 hours
-              }
-            }
-          },
-          
-          // Same origin navigation - Cache First
-          {
-            urlPattern: ({ request }) => request.mode === 'navigate',
+            urlPattern: /\.(?:png|jpg|jpeg|svg|gif|webp|ico)$/,
             handler: 'CacheFirst',
             options: {
-              cacheName: 'pages-cache',
+              cacheName: 'images',
               expiration: {
-                maxEntries: 50,
-                maxAgeSeconds: 60 * 60 * 24 * 7 // 1 week
+                maxEntries: 100,
+                maxAgeSeconds: 60 * 60 * 24 * 30
               }
             }
           }
         ],
         
-        // Precache important routes
-        additionalManifestEntries: [
-          { url: '/', revision: '1.0.0' },
-          { url: '/profile', revision: '1.0.0' },
-          { url: '/settings', revision: '1.0.0' },
-          { url: '/stats', revision: '1.0.0' }
-        ],
-        
-        cleanupOutdatedCaches: true,
+        // Offline-first settings
         skipWaiting: true,
-        clientsClaim: true
+        clientsClaim: true,
+        cleanupOutdatedCaches: true
       },
       
       manifest: {
         name: 'Blackjack Card Counter Pro',
         short_name: 'Blackjack Pro',
-        description: 'Professional offline-first blackjack game with advanced card counting features',
+        description: 'Professional offline-first blackjack game with card counting',
         theme_color: '#1a5490',
         background_color: '#0f4c75',
         display: 'standalone',
         orientation: 'portrait',
         scope: '/',
         start_url: '/',
-        
-        // Enhanced for offline experience
-        categories: ['games', 'entertainment', 'utilities'],
-        
         icons: [
-          {
-            src: 'pwa-64x64.png',
-            sizes: '64x64',
-            type: 'image/png'
-          },
           {
             src: 'pwa-192x192.png',
             sizes: '192x192',
@@ -139,16 +77,9 @@ export default defineConfig({
           {
             src: 'pwa-512x512.png',
             sizes: '512x512',
-            type: 'image/png',
-            purpose: 'any'
+            type: 'image/png'
           }
-        ],
-        
-        // Offline capability indicators
-        prefer_related_applications: false,
-        edge_side_panel: {
-          preferred_width: 400
-        }
+        ]
       },
       
       devOptions: {
@@ -163,16 +94,6 @@ export default defineConfig({
   },
   
   build: {
-    target: 'esnext',
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          vendor: ['vue', 'vue-router', 'pinia'],
-          utils: ['dexie'],
-          game: ['./src/stores/gameStore.js', './src/stores/countingStore.js'],
-          ui: ['./src/components/CardComponent.vue', './src/components/PlayerHand.vue']
-        }
-      }
-    }
+    target: 'esnext'
   }
 })
