@@ -4,6 +4,9 @@
       <!-- Compact Header - Just bankroll -->
       <div class="compact-header">
         <span class="bankroll">${{ playerStore.bankroll }}</span>
+        <button @click="newShoe" class="new-shoe-btn" title="New Shoe - Fresh Decks">
+          🔄
+        </button>
       </div>
 
       <!-- Compact Card Count Panel -->
@@ -251,6 +254,14 @@ async function split() {
   await gameStore.split()
 }
 
+function newShoe() {
+  // Reset everything - fresh shoe with full decks
+  gameStore.createNewDeck()
+  countingStore.newShoe()
+  gameStore.resetGame()
+  console.log('New shoe started - fresh decks and reset count')
+}
+
 function newGame() {
   gameStore.resetGame()
   countingStore.resetRound()
@@ -268,11 +279,7 @@ function sameBet() {
 }
 
 function onBetPlaced(amount) {
-  console.log(`Bet placed: $${amount}`)
-}
-
-function onCardClick(card, handIndex) {
-  console.log('Card clicked:', card, 'in hand:', handIndex)
+  console.log(`Bet placed: ${amount}`)
 }
 
 function takeInsurance() {
@@ -315,7 +322,9 @@ function handleNavTouch() {
 
 /* Compact Header */
 .compact-header {
-  text-align: center;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   margin-bottom: 8px;
   padding: 8px;
 }
@@ -324,6 +333,26 @@ function handleNavTouch() {
   font-size: 24px;
   font-weight: bold;
   color: #34a853;
+}
+
+.new-shoe-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: white;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.new-shoe-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  transform: rotate(180deg);
 }
 
 /* Compact Game Message */
