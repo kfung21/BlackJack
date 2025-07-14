@@ -7,49 +7,44 @@
       </div>
       
       <div class="modal-content">
-        <!-- Current Situation -->
+        <!-- Current Situation - More Compact -->
         <div class="hint-section">
-          <h3>Current Situation</h3>
-          <div class="situation-grid">
+          <h3>Situation</h3>
+          <div class="situation-grid compact">
             <div class="situation-item">
               <span class="label">Your Hand:</span>
               <span class="value">{{ handValue }}</span>
             </div>
             <div class="situation-item">
-              <span class="label">Dealer Shows:</span>
+              <span class="label">Dealer:</span>
               <span class="value">{{ dealerUpCard }}</span>
             </div>
             <div class="situation-item" v-if="showCount">
-              <span class="label">True Count:</span>
+              <span class="label">TC:</span>
               <span class="value" :class="countClass">{{ trueCountDisplay }}</span>
             </div>
             <div class="situation-item" v-if="showCount">
-              <span class="label">Running Count:</span>
+              <span class="label">RC:</span>
               <span class="value">{{ runningCount }}</span>
             </div>
           </div>
         </div>
 
-        <!-- Recommendation -->
-        <div class="recommendation-box">
-          <h3>RECOMMENDED ACTION</h3>
+        <!-- Recommendation - Condensed -->
+        <div class="recommendation-box compact">
           <div class="action-recommendation">{{ recommendedAction }}</div>
           <div class="recommendation-reason">{{ recommendationReason }}</div>
-          <div class="confidence">
-            Confidence: <span class="confidence-level">{{ confidence }}</span>
-          </div>
+          <div class="confidence">Confidence: <span class="confidence-level">{{ confidence }}</span></div>
         </div>
 
-        <!-- Basic Strategy Explanation -->
+        <!-- Basic Strategy - Single Line -->
         <div class="hint-section">
-          <h3>Basic Strategy</h3>
           <p class="strategy-text">{{ basicStrategyExplanation }}</p>
         </div>
 
-        <!-- Action Summary -->
+        <!-- Action Summary - Horizontal -->
         <div class="hint-section">
-          <h3>Action Summary</h3>
-          <div class="action-grid">
+          <div class="action-grid compact">
             <div 
               v-for="action in possibleActions" 
               :key="action.type"
@@ -62,9 +57,8 @@
           </div>
         </div>
 
-        <!-- Count Adjustment (if applicable) -->
-        <div v-if="showCountAdjustment" class="hint-section">
-          <h3>Count Adjustment</h3>
+        <!-- Count Adjustment - Only if applicable -->
+        <div v-if="showCountAdjustment" class="hint-section compact">
           <p class="count-advice">{{ countAdvice }}</p>
         </div>
       </div>
@@ -234,16 +228,16 @@ const confidence = computed(() => {
     parseInt(handValue.value) : handValue.value
   
   // High confidence situations
-  if (handVal <= 11 && action === 'hit') return 'High'
-  if (handVal >= 17 && action === 'stand') return 'High'
-  if (handVal === 11 && action === 'double') return 'High'
-  if (handVal === 20 && action === 'stand') return 'High'
+  if (handVal <= 11 && action === 'hit') return 'HIGH'
+  if (handVal >= 17 && action === 'stand') return 'HIGH'
+  if (handVal === 11 && action === 'double') return 'HIGH'
+  if (handVal === 20 && action === 'stand') return 'HIGH'
   
   // Low confidence situations
-  if (handVal === 16 && dealerUpCard.value >= 7) return 'Low'
-  if (handVal === 12 && dealerUpCard.value >= 2 && dealerUpCard.value <= 3) return 'Low'
+  if (handVal === 16 && dealerUpCard.value >= 7) return 'LOW'
+  if (handVal === 12 && dealerUpCard.value >= 2 && dealerUpCard.value <= 3) return 'LOW'
   
-  return 'Medium'
+  return 'MEDIUM'
 })
 
 const basicStrategyExplanation = computed(() => {
@@ -403,9 +397,8 @@ function closeModal() {
   background: linear-gradient(135deg, #1a5490 0%, #0f4c75 100%);
   border-radius: 16px;
   width: 100%;
-  max-width: 500px;
-  height: auto;
-  max-height: 95vh;
+  max-width: 380px; /* Reduced from 500px */
+  max-height: 80vh; /* Reduced from 95vh */
   display: flex;
   flex-direction: column;
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
@@ -416,7 +409,7 @@ function closeModal() {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 20px;
+  padding: 12px 16px; /* Reduced padding */
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   flex-shrink: 0;
 }
@@ -424,17 +417,17 @@ function closeModal() {
 .modal-header h2 {
   margin: 0;
   color: white;
-  font-size: 20px;
+  font-size: 18px; /* Reduced from 20px */
 }
 
 .close-btn {
   background: rgba(255, 255, 255, 0.1);
   border: 1px solid rgba(255, 255, 255, 0.2);
   color: white;
-  width: 32px;
-  height: 32px;
+  width: 28px; /* Reduced from 32px */
+  height: 28px;
   border-radius: 50%;
-  font-size: 18px;
+  font-size: 16px; /* Reduced from 18px */
   cursor: pointer;
   transition: all 0.2s ease;
   display: flex;
@@ -450,12 +443,11 @@ function closeModal() {
 .modal-content {
   flex: 1;
   overflow-y: auto;
-  padding: 16px;
-  overflow: hidden; /* Prevent scrolling */
+  padding: 12px; /* Reduced from 16px */
 }
 
 .hint-section {
-  margin-bottom: 16px;
+  margin-bottom: 12px; /* Reduced from 16px */
 }
 
 .hint-section:last-child {
@@ -464,33 +456,34 @@ function closeModal() {
 
 .hint-section h3 {
   color: white;
-  margin: 0 0 8px 0;
-  font-size: 16px;
+  margin: 0 0 6px 0; /* Reduced from 8px */
+  font-size: 14px; /* Reduced from 16px */
 }
 
-.situation-grid {
+/* Compact situation grid */
+.situation-grid.compact {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  gap: 6px; /* Reduced from 8px */
 }
 
 .situation-item {
   background: rgba(0, 0, 0, 0.2);
-  padding: 10px;
-  border-radius: 8px;
+  padding: 6px 8px; /* Reduced from 10px */
+  border-radius: 6px; /* Reduced from 8px */
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
 .situation-item .label {
-  display: block;
   color: rgba(255, 255, 255, 0.7);
-  font-size: 11px;
-  margin-bottom: 2px;
+  font-size: 11px; /* Same size */
 }
 
 .situation-item .value {
-  display: block;
   color: white;
-  font-size: 18px;
+  font-size: 14px; /* Reduced from 18px */
   font-weight: bold;
 }
 
@@ -498,36 +491,30 @@ function closeModal() {
 .count-negative { color: #f44336 !important; }
 .count-neutral { color: #2196f3 !important; }
 
-.recommendation-box {
+/* Compact recommendation box */
+.recommendation-box.compact {
   background: linear-gradient(145deg, #2196f3 0%, #1976d2 100%);
-  border-radius: 12px;
-  padding: 16px;
+  border-radius: 10px; /* Reduced from 12px */
+  padding: 12px; /* Reduced from 16px */
   text-align: center;
-  margin-bottom: 16px;
-}
-
-.recommendation-box h3 {
-  margin: 0 0 8px 0;
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 1px;
+  margin-bottom: 12px; /* Reduced from 16px */
 }
 
 .action-recommendation {
-  font-size: 28px;
+  font-size: 24px; /* Reduced from 28px */
   font-weight: bold;
-  margin-bottom: 6px;
+  margin-bottom: 4px; /* Reduced from 6px */
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
 .recommendation-reason {
-  font-size: 14px;
-  margin-bottom: 8px;
+  font-size: 13px; /* Reduced from 14px */
+  margin-bottom: 6px; /* Reduced from 8px */
   opacity: 0.9;
 }
 
 .confidence {
-  font-size: 12px;
+  font-size: 11px; /* Reduced from 12px */
   opacity: 0.8;
 }
 
@@ -538,24 +525,27 @@ function closeModal() {
 
 .strategy-text {
   color: rgba(255, 255, 255, 0.9);
-  line-height: 1.4;
+  line-height: 1.3; /* Reduced from 1.4 */
   margin: 0;
-  font-size: 14px;
+  font-size: 13px; /* Reduced from 14px */
 }
 
-.action-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+/* Compact action grid */
+.action-grid.compact {
+  display: flex; /* Changed from grid to flex */
   gap: 6px;
+  flex-wrap: wrap;
+  justify-content: center;
 }
 
 .action-item {
   background: rgba(0, 0, 0, 0.2);
   border: 1px solid rgba(255, 255, 255, 0.2);
-  padding: 8px;
-  border-radius: 8px;
+  padding: 6px 10px; /* Reduced from 8px */
+  border-radius: 6px; /* Reduced from 8px */
   text-align: center;
   transition: all 0.2s ease;
+  min-width: 70px; /* Reduced from 100px */
 }
 
 .action-item.best {
@@ -572,40 +562,44 @@ function closeModal() {
   display: block;
   font-weight: bold;
   color: white;
-  margin-bottom: 2px;
-  font-size: 14px;
+  font-size: 12px; /* Reduced from 14px */
 }
 
 .action-rating {
   display: block;
-  font-size: 11px;
+  font-size: 10px; /* Reduced from 11px */
   color: rgba(255, 255, 255, 0.8);
+}
+
+/* Compact count advice */
+.hint-section.compact {
+  margin-bottom: 8px;
 }
 
 .count-advice {
   color: rgba(255, 255, 255, 0.9);
   background: rgba(0, 0, 0, 0.2);
-  padding: 10px;
-  border-radius: 8px;
+  padding: 8px; /* Reduced from 10px */
+  border-radius: 6px; /* Reduced from 8px */
   margin: 0;
-  font-size: 13px;
-  line-height: 1.4;
+  font-size: 12px; /* Reduced from 13px */
+  line-height: 1.3; /* Reduced from 1.4 */
 }
 
 .modal-footer {
-  padding: 12px 20px;
+  padding: 10px 16px; /* Reduced from 12px 20px */
   border-top: 1px solid rgba(255, 255, 255, 0.1);
   flex-shrink: 0;
 }
 
 .btn-primary {
   width: 100%;
-  padding: 12px;
+  padding: 10px; /* Reduced from 12px */
   background: linear-gradient(145deg, #34a853 0%, #2d8659 100%);
   color: white;
   border: none;
   border-radius: 8px;
-  font-size: 16px;
+  font-size: 15px; /* Reduced from 16px */
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -619,26 +613,25 @@ function closeModal() {
 /* Mobile responsiveness */
 @media (max-width: 480px) {
   .hint-modal {
-    max-height: 100vh;
-    height: 100vh;
+    max-height: 75vh; /* Even more compact on mobile */
     max-width: 100%;
-    border-radius: 0;
+    margin: 0 8px;
   }
   
   .modal-content {
-    padding: 12px;
+    padding: 10px;
   }
   
   .modal-header {
-    padding: 12px 16px;
+    padding: 10px 12px;
   }
   
-  .recommendation-box {
-    padding: 12px;
+  .recommendation-box.compact {
+    padding: 10px;
   }
   
   .action-recommendation {
-    font-size: 24px;
+    font-size: 22px;
   }
 }
 </style>

@@ -1,4 +1,6 @@
 <template>
+  <!-- This component is now only used as a fallback if needed -->
+  <!-- The main betting interface is now integrated directly into GameView.vue -->
   <div class="betting-panel" v-if="gameStore.canBet">
     <div class="bankroll-display">
       <div class="bankroll-amount">${{ playerStore.bankroll }}</div>

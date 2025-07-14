@@ -1,13 +1,4 @@
-// Show net result only for split hands
-const showNetResult = computed(() => {
-  if (gameStore.gamePhase !== 'finished') return false
-  
-  const viewPlayer = gameStore.activeViewPlayer
-  if (!viewPlayer || !viewPlayer.hands) return false
-  
-  // Only show net result if player has multiple hands (from splits)
-  return viewPlayer.hands.length > 1 && netResult.value !== null
-})<template>
+<template>
   <div class="game-view">
     <div class="game-container">
       <!-- Game Over Modal -->
@@ -72,182 +63,235 @@ const showNetResult = computed(() => {
         </div>
       </div>
 
-      <!-- Compact Header - Just bankroll -->
-      <div class="compact-header">
-        <span class="bankroll" :class="{ 'low-bankroll': isLowBankroll }">${{ playerStore.bankroll }}</span>
-        
-        <!-- Multiplayer toggle and new shoe -->
-        <div class="header-buttons">
+      <!-- Simplified betting screen when in betting phase -->
+      <div v-if="gameStore.gamePhase === 'betting'" class="betting-screen">
+        <!-- Simple header with just bankroll -->
+        <div class="betting-header">
+          <div class="bankroll-display">
+            <div class="bankroll-label">Available</div>
+            <div class="bankroll-amount" :class="{ 'low-bankroll': isLowBankroll }">
+              ${{ playerStore.bankroll }}
+            </div>
+          </div>
+        </div>
+
+        <!-- Clean betting interface -->
+        <div class="betting-main">
+          <div class="bet-display">
+            <div class="bet-label">Place Your Bet</div>
+            <div class="bet-amount-display">
+              <span class="currency">$</span>
+              <span class="amount">{{ currentBet }}</span>
+            </div>
+          </div>
+
+          <!-- Bet controls -->
+          <div class="bet-controls">
+            <div class="quick-bets">
+              <button 
+                v-for="amount in quickBetAmounts"
+                :key="amount"
+                @click="setBet(amount)"
+                :disabled="amount > playerStore.bankroll"
+                class="btn bet-btn"
+                :class="{ 'active': currentBet === amount }"
+              >
+                ${{ amount }}
+              </button>
+            </div>
+            
+            <div class="bet-adjusters">
+              <button @click="decreaseBet" :disabled="currentBet <= 5" class="btn btn-adjuster">−</button>
+              <button @click="increaseBet" :disabled="currentBet >= playerStore.bankroll" class="btn btn-adjuster">+</button>
+            </div>
+          </div>
+
+          <!-- Deal button -->
           <button 
-            @click="toggleMultiplayer" 
-            class="multiplayer-btn" 
-            :class="{ active: gameStore.isMultiplayer }"
-            title="Toggle Multiplayer"
+            @click="placeBet"
+            :disabled="!canPlaceBet"
+            class="btn btn-primary deal-btn"
           >
-            {{ gameStore.isMultiplayer ? '👥' : '👤' }}
+            Deal Cards
+          </button>
+        </div>
+
+
+      </div>
+
+      <!-- Regular game view when not betting -->
+      <div v-else>
+        <!-- Compact Header - Just bankroll -->
+        <div class="compact-header">
+          <span class="bankroll" :class="{ 'low-bankroll': isLowBankroll }">${{ playerStore.bankroll }}</span>
+          
+          <!-- Multiplayer toggle and new shoe -->
+          <div class="header-buttons">
+            <button 
+              @click="toggleMultiplayer" 
+              class="multiplayer-btn" 
+              :class="{ active: gameStore.isMultiplayer }"
+              title="Toggle Multiplayer"
+            >
+              {{ gameStore.isMultiplayer ? '👥' : '👤' }}
+            </button>
+            
+            <button @click="newShoe" class="new-shoe-btn" title="New Shoe - Fresh Decks">
+              🔄
+            </button>
+          </div>
+        </div>
+
+        <!-- Compact Card Count Panel -->
+        <CardCountPanel />
+
+        <!-- Dealer Hand -->
+        <DealerHand
+          :dealer-cards="gameStore.dealerHand"
+          :is-dealing="gameStore.isDealing"
+          :game-phase="gameStore.gamePhase"
+          :show-insurance="showInsurance"
+          @take-insurance="takeInsurance"
+          @decline-insurance="declineInsurance"
+        />
+
+        <!-- Game Message -->
+        <div class="game-message" :class="messageClass">
+          <span v-if="showCurrentPlayer" class="current-player-indicator">
+            {{ gameStore.currentPlayer?.name }}'s Turn {{ gameStore.currentPlayer?.avatar }}
+          </span>
+          <span v-else>{{ gameStore.message }}</span>
+        </div>
+
+        <!-- Player Hands -->
+        <div class="player-hands-container" :key="`hands-${gameStore.activeViewPlayerId}-${currentPlayerHands.length}`">
+          <!-- Show whose cards we're viewing if in multiplayer -->
+          <div v-if="gameStore.isMultiplayer && gameStore.activeViewPlayer" class="viewing-player-indicator">
+            Viewing: {{ gameStore.activeViewPlayer.name }} {{ gameStore.activeViewPlayer.avatar }}
+          </div>
+          
+          <!-- Net result for finished games with splits -->
+          <div v-if="showNetResult" class="net-result" :class="netResultClass">
+            <span class="net-label">Net:</span>
+            <span class="net-amount">{{ netResultText }}</span>
+          </div>
+          
+          <!-- Show multiple hands if split -->
+          <div :class="{ 'split-hands': currentPlayerHands.length > 1 }">
+            <PlayerHand
+              v-for="(hand, index) in currentPlayerHands"
+              :key="`hand-${index}-${gameStore.activeViewPlayerId}-${hand.cards.length}`"
+              :hand="hand"
+              :hand-index="index"
+              :is-active="isHandActive(index)"
+              :is-dealing="gameStore.isDealing"
+              @card-click="onCardClick"
+            />
+          </div>
+          
+          <!-- Show message if no hands -->
+          <div v-if="currentPlayerHands.length === 0" class="no-hands-message">
+            No cards to display
+          </div>
+        </div>
+
+        <!-- Compact Action Buttons -->
+        <div class="action-buttons" v-if="gameStore.canPlay && isCurrentHumanPlayerTurn">
+          <button 
+            @click="hit"
+            :disabled="!canHit"
+            class="btn btn-action btn-hit"
+          >
+            Hit
           </button>
           
-          <button @click="newShoe" class="new-shoe-btn" title="New Shoe - Fresh Decks">
-            🔄
-          </button>
-        </div>
-      </div>
-
-      <!-- Compact Card Count Panel -->
-      <CardCountPanel />
-
-      <!-- Dealer Hand -->
-      <DealerHand
-        :dealer-cards="gameStore.dealerHand"
-        :is-dealing="gameStore.isDealing"
-        :game-phase="gameStore.gamePhase"
-        :show-insurance="showInsurance"
-        @take-insurance="takeInsurance"
-        @decline-insurance="declineInsurance"
-      />
-
-      <!-- Game Message -->
-      <div class="game-message" :class="messageClass">
-        <span v-if="showCurrentPlayer" class="current-player-indicator">
-          {{ gameStore.currentPlayer?.name }}'s Turn {{ gameStore.currentPlayer?.avatar }}
-        </span>
-        <span v-else>{{ gameStore.message }}</span>
-      </div>
-
-      <!-- Player Hands -->
-      <div class="player-hands-container" :key="`hands-${gameStore.activeViewPlayerId}-${currentPlayerHands.length}`">
-        <!-- Show whose cards we're viewing if in multiplayer -->
-        <div v-if="gameStore.isMultiplayer && gameStore.activeViewPlayer" class="viewing-player-indicator">
-          Viewing: {{ gameStore.activeViewPlayer.name }} {{ gameStore.activeViewPlayer.avatar }}
-        </div>
-        
-        <!-- Net result for finished games with splits -->
-        <div v-if="showNetResult" class="net-result" :class="netResultClass">
-          <span class="net-label">Net:</span>
-          <span class="net-amount">{{ netResultText }}</span>
-        </div>
-        
-        <!-- Show multiple hands if split -->
-        <div :class="{ 'split-hands': currentPlayerHands.length > 1 }">
-          <PlayerHand
-            v-for="(hand, index) in currentPlayerHands"
-            :key="`hand-${index}-${gameStore.activeViewPlayerId}-${hand.cards.length}`"
-            :hand="hand"
-            :hand-index="index"
-            :is-active="isHandActive(index)"
-            :is-dealing="gameStore.isDealing"
-            @card-click="onCardClick"
-          />
-        </div>
-        
-        <!-- Show message if no hands -->
-        <div v-if="currentPlayerHands.length === 0" class="no-hands-message">
-          No cards to display
-        </div>
-      </div>
-
-      <!-- Compact Action Buttons -->
-      <div class="action-buttons" v-if="gameStore.canPlay && isCurrentHumanPlayerTurn">
-        <button 
-          @click="hit"
-          :disabled="!canHit"
-          class="btn btn-action btn-hit"
-        >
-          Hit
-        </button>
-        
-        <button 
-          @click="stand"
-          :disabled="!canStand"
-          class="btn btn-action btn-stand"
-        >
-          Stand
-        </button>
-        
-        <button 
-          @click="doubleDown"
-          :disabled="!canDouble"
-          class="btn btn-action btn-double"
-          :class="{ 'btn-invisible': !canDouble }"
-        >
-          Double
-        </button>
-        
-        <button 
-          @click="showHint"
-          v-if="playerStore.settings.showHints"
-          class="btn btn-action btn-hint"
-        >
-          💡 Hint
-        </button>
-        
-        <button 
-          @click="split"
-          :disabled="!canSplitHand"
-          class="btn btn-action btn-split"
-          :class="{ 'btn-invisible': !canSplitHand }"
-        >
-          Split
-        </button>
-        
-        <div 
-          v-if="!playerStore.settings.showHints"
-          class="btn-spacer"
-        ></div>
-      </div>
-
-      <!-- New Game Buttons -->
-      <div class="new-game-section" v-if="gameStore.gamePhase === 'finished'">
-        <div class="game-buttons">
           <button 
-            @click="sameBet" 
-            :disabled="!canUseSameBet"
-            class="btn btn-primary btn-same-bet"
+            @click="stand"
+            :disabled="!canStand"
+            class="btn btn-action btn-stand"
           >
-            Same Bet (${{ gameStore.lastBet }})
+            Stand
           </button>
-          <button @click="newGame" class="btn btn-secondary btn-new-game">
-            New Game
+          
+          <button 
+            @click="doubleDown"
+            :disabled="!canDouble"
+            class="btn btn-action btn-double"
+            :class="{ 'btn-invisible': !canDouble }"
+          >
+            Double
+          </button>
+          
+          <button 
+            @click="showHint"
+            v-if="playerStore.settings.showHints"
+            class="btn btn-action btn-hint"
+          >
+            💡 Hint
+          </button>
+          
+          <button 
+            @click="split"
+            :disabled="!canSplitHand"
+            class="btn btn-action btn-split"
+            :class="{ 'btn-invisible': !canSplitHand }"
+          >
+            Split
+          </button>
+          
+          <div 
+            v-if="!playerStore.settings.showHints"
+            class="btn-spacer"
+          ></div>
+        </div>
+
+        <!-- New Game Buttons -->
+        <div class="new-game-section" v-if="gameStore.gamePhase === 'finished'">
+          <div class="game-buttons">
+            <button 
+              @click="sameBet" 
+              :disabled="!canUseSameBet"
+              class="btn btn-primary btn-same-bet"
+            >
+              Same Bet (${{ gameStore.lastBet }})
+            </button>
+            <button @click="newGame" class="btn btn-secondary btn-new-game">
+              New Game
+            </button>
+          </div>
+        </div>
+
+        <!-- Hint Modal -->
+        <HintModal 
+          :is-visible="showHintModal"
+          @close="showHintModal = false"
+        />
+
+        <!-- Player Roster -->
+        <PlayerRoster />
+
+        <!-- Hidden Bottom Navigation -->
+        <div class="bottom-nav" :class="{ 'nav-visible': showBottomNav }" @touchstart="handleNavTouch" @mouseenter="showBottomNav = true" @mouseleave="showBottomNav = false">
+          <button @click="$router.push('/')" class="nav-btn" :class="{ active: $route.path === '/' }">
+            <span class="nav-icon">🎮</span>
+            <span class="nav-label">Game</span>
+          </button>
+          
+          <button @click="$router.push('/stats')" class="nav-btn" :class="{ active: $route.path === '/stats' }">
+            <span class="nav-icon">📊</span>
+            <span class="nav-label">Stats</span>
+          </button>
+          
+          <button @click="$router.push('/settings')" class="nav-btn" :class="{ active: $route.path === '/settings' }">
+            <span class="nav-icon">⚙️</span>
+            <span class="nav-label">Settings</span>
+          </button>
+          
+          <button @click="$router.push('/profile')" class="nav-btn" :class="{ active: $route.path === '/profile' }">
+            <span class="nav-icon">👤</span>
+            <span class="nav-label">Profile</span>
           </button>
         </div>
-      </div>
-
-      <!-- Hint Modal -->
-      <HintModal 
-        :is-visible="showHintModal"
-        @close="showHintModal = false"
-      />
-
-      <!-- Player Roster -->
-      <PlayerRoster />
-
-      <!-- Betting Panel -->
-      <BettingPanel 
-        v-if="gameStore.canBet"
-        @bet-placed="onBetPlaced"
-      />
-
-      <!-- Hidden Bottom Navigation -->
-      <div class="bottom-nav" :class="{ 'nav-visible': showBottomNav }" @touchstart="handleNavTouch" @mouseenter="showBottomNav = true" @mouseleave="showBottomNav = false">
-        <button @click="$router.push('/')" class="nav-btn" :class="{ active: $route.path === '/' }">
-          <span class="nav-icon">🎮</span>
-          <span class="nav-label">Game</span>
-        </button>
-        
-        <button @click="$router.push('/stats')" class="nav-btn" :class="{ active: $route.path === '/stats' }">
-          <span class="nav-icon">📊</span>
-          <span class="nav-label">Stats</span>
-        </button>
-        
-        <button @click="$router.push('/settings')" class="nav-btn" :class="{ active: $route.path === '/settings' }">
-          <span class="nav-icon">⚙️</span>
-          <span class="nav-label">Settings</span>
-        </button>
-        
-        <button @click="$router.push('/profile')" class="nav-btn" :class="{ active: $route.path === '/profile' }">
-          <span class="nav-icon">👤</span>
-          <span class="nav-label">Profile</span>
-        </button>
       </div>
     </div>
   </div>
@@ -264,7 +308,6 @@ import { generateBotName } from '../utils/botStrategy'
 import CardCountPanel from '../components/CardCountPanel.vue'
 import DealerHand from '../components/DealerHand.vue'
 import PlayerHand from '../components/PlayerHand.vue'
-import BettingPanel from '../components/BettingPanel.vue'
 import HintModal from '../components/HintModal.vue'
 import PlayerRoster from '../components/PlayerRoster.vue'
 
@@ -279,9 +322,20 @@ const showBottomNav = ref(false)
 const processedCards = ref(new Set()) // Track cards already counted
 const showGameOver = ref(false)
 const customRestartAmount = ref(1000)
+const currentBet = ref(15)
 
 // Restart amount options
 const restartAmounts = [200, 500, 1000, 2500]
+
+// Quick bet amounts
+const quickBetAmounts = computed(() => {
+  const amounts = [5, 10, 15, 25, 50, 100]
+  return amounts.filter(amount => amount <= playerStore.bankroll)
+})
+
+const canPlaceBet = computed(() => {
+  return currentBet.value > 0 && currentBet.value <= playerStore.bankroll
+})
 
 // Check if bankroll is too low
 const isLowBankroll = computed(() => {
@@ -307,9 +361,32 @@ onMounted(async () => {
     showGameOver.value = true
   }
   
+  // Initialize bet with last bet or default
+  currentBet.value = gameStore.lastBet || 15
+  
   gameStore.initializeGame()
   await addVisibleCardsToCount()
 })
+
+function setBet(amount) {
+  currentBet.value = Math.min(amount, playerStore.bankroll)
+}
+
+function increaseBet() {
+  const increment = currentBet.value < 50 ? 5 : (currentBet.value < 100 ? 10 : 25)
+  currentBet.value = Math.min(currentBet.value + increment, playerStore.bankroll)
+}
+
+function decreaseBet() {
+  const decrement = currentBet.value <= 50 ? 5 : (currentBet.value <= 100 ? 10 : 25)
+  currentBet.value = Math.max(currentBet.value - decrement, 5)
+}
+
+function placeBet() {
+  if (canPlaceBet.value) {
+    gameStore.placeMainPlayerBet(currentBet.value)
+  }
+}
 
 function getRestartLabel(amount) {
   if (amount === 200) return 'Beginner'
@@ -498,6 +575,17 @@ const canUseSameBet = computed(() => {
   return gameStore.lastBet <= playerStore.bankroll && gameStore.lastBet > 0
 })
 
+// Show net result only for split hands
+const showNetResult = computed(() => {
+  if (gameStore.gamePhase !== 'finished') return false
+  
+  const viewPlayer = gameStore.activeViewPlayer
+  if (!viewPlayer || !viewPlayer.hands) return false
+  
+  // Only show net result if player has multiple hands (from splits)
+  return viewPlayer.hands.length > 1 && netResult.value !== null
+})
+
 // Calculate net result for current game
 const netResult = computed(() => {
   if (gameStore.gamePhase !== 'finished') return null
@@ -539,9 +627,9 @@ const netResultText = computed(() => {
   if (netResult.value === null) return ''
   
   if (netResult.value > 0) {
-    return `+${netResult.value.toFixed(2)}`
+    return `+$${netResult.value.toFixed(2)}`
   } else if (netResult.value < 0) {
-    return `-${Math.abs(netResult.value).toFixed(2)}`
+    return `-$${Math.abs(netResult.value).toFixed(2)}`
   } else {
     return '$0.00'
   }
@@ -746,10 +834,6 @@ function sameBet() {
   }
 }
 
-function onBetPlaced(amount) {
-  console.log(`Bet placed: ${amount}`)
-}
-
 function takeInsurance() {
   showInsurance.value = false
 }
@@ -796,6 +880,174 @@ function toggleMultiplayer() {
   margin: 0 auto;
   position: relative;
 }
+
+/* Simplified Betting Screen */
+.betting-screen {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - 16px);
+}
+
+.betting-header {
+  padding: 24px 0;
+  text-align: center;
+}
+
+.bankroll-display {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  border-radius: 16px;
+  padding: 20px;
+  display: inline-block;
+}
+
+.bankroll-label {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.8);
+  margin-bottom: 8px;
+}
+
+.bankroll-amount {
+  font-size: 32px;
+  font-weight: bold;
+  color: #34a853;
+}
+
+.betting-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0 16px;
+  margin-top: -40px; /* Pull content up */
+  margin-bottom: 80px; /* Add space for bottom nav */
+}
+
+.bet-display {
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.bet-label {
+  font-size: 18px;
+  color: rgba(255, 255, 255, 0.9);
+  margin-bottom: 16px;
+  font-weight: 500;
+}
+
+.bet-amount-display {
+  display: flex;
+  justify-content: center;
+  align-items: baseline;
+  font-size: 48px;
+  font-weight: bold;
+  color: #fff;
+}
+
+.currency {
+  font-size: 36px;
+  margin-right: 8px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.bet-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 32px;
+}
+
+.quick-bets {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.bet-btn {
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 2px solid transparent;
+  color: white;
+  font-size: 16px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.bet-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.bet-btn.active {
+  background: rgba(52, 168, 83, 0.2);
+  border-color: #34a853;
+  color: #34a853;
+}
+
+.bet-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.bet-adjusters {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+}
+
+.btn-adjuster {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  font-size: 28px;
+  font-weight: bold;
+  background: rgba(255, 255, 255, 0.1);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-adjuster:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.btn-adjuster:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.deal-btn {
+  padding: 20px 32px;
+  font-size: 20px;
+  font-weight: bold;
+  background: linear-gradient(145deg, #34a853 0%, #2d8659 100%);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(52, 168, 83, 0.3);
+  transition: all 0.2s ease;
+}
+
+.deal-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(52, 168, 83, 0.4);
+}
+
+.deal-btn:active {
+  transform: translateY(0);
+}
+
+.deal-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: linear-gradient(145deg, #666 0%, #888 100%);
+  box-shadow: none;
+}
+
+
 
 /* Game Over Modal */
 .game-over-modal {
