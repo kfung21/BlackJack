@@ -93,266 +93,316 @@ const props = defineProps({
 
 const emit = defineEmits(['close'])
 
-// Store references - wrapped in try/catch for safety
-let gameStore, countingStore, playerStore
-try {
-  gameStore = useGameStore()
-  countingStore = useCountingStore()
-  playerStore = usePlayerStore()
-} catch (error) {
-  console.error('Error accessing stores:', error)
-}
+// Store references
+const gameStore = useGameStore()
+const countingStore = useCountingStore()
+const playerStore = usePlayerStore()
 
 const playerHand = computed(() => {
-  try {
-    return gameStore?.currentHand?.cards || []
-  } catch {
-    return []
-  }
+  return gameStore?.currentHand?.cards || []
 })
 
 const dealerUpCard = computed(() => {
-  try {
-    return gameStore?.dealerUpCard || null
-  } catch {
-    return null
-  }
+  return gameStore?.dealerUpCard || null
 })
 
 const playerHandValue = computed(() => {
-  try {
-    return calculateHandValue(playerHand.value)
-  } catch {
-    return { total: 0, soft: false, busted: false }
-  }
+  return calculateHandValue(playerHand.value)
 })
 
 const playerHandText = computed(() => {
-  try {
-    const value = playerHandValue.value
-    if (value.soft && value.total <= 21) {
-      return `${value.total} (soft)`
-    }
-    return value.total.toString()
-  } catch {
-    return '0'
+  const value = playerHandValue.value
+  if (value.soft && value.total <= 21) {
+    return `${value.total} (soft)`
   }
+  return value.total.toString()
 })
 
 const dealerUpCardText = computed(() => {
-  try {
-    const card = dealerUpCard.value
-    return card ? `${card.value}${getSuitSymbol(card.suit)}` : 'Unknown'
-  } catch {
-    return 'Unknown'
-  }
+  const card = dealerUpCard.value
+  return card ? `${card.value}${getSuitSymbol(card.suit)}` : 'Unknown'
 })
 
 const formattedTrueCount = computed(() => {
-  try {
-    const tc = countingStore?.trueCount || 0
-    return tc > 0 ? `+${tc}` : tc.toString()
-  } catch {
-    return '0'
-  }
+  const tc = countingStore?.trueCount || 0
+  return tc > 0 ? `+${tc}` : tc.toString()
 })
 
 const formattedRunningCount = computed(() => {
-  try {
-    const rc = countingStore?.runningCount || 0
-    return rc > 0 ? `+${rc}` : rc.toString()
-  } catch {
-    return '0'
-  }
+  const rc = countingStore?.runningCount || 0
+  return rc > 0 ? `+${rc}` : rc.toString()
 })
 
 const countClass = computed(() => {
-  try {
-    const tc = countingStore?.trueCount || 0
-    if (tc >= 2) return 'positive'
-    if (tc <= -2) return 'negative'
-    return 'neutral'
-  } catch {
-    return 'neutral'
-  }
+  const tc = countingStore?.trueCount || 0
+  if (tc >= 2) return 'positive'
+  if (tc <= -2) return 'negative'
+  return 'neutral'
 })
 
 const recommendation = computed(() => {
-  try {
-    return getOptimalPlay()
-  } catch {
-    return { action: 'hit', reason: 'Error calculating recommendation', confidence: 'Unknown' }
-  }
+  return getOptimalPlay()
 })
 
 const basicStrategyText = computed(() => {
-  try {
-    const playerTotal = playerHandValue.value.total
-    const dealerValue = getDealerValue()
-    const isSoft = playerHandValue.value.soft
-    
-    if (isSoft) {
-      return getSoftHandStrategy(playerTotal, dealerValue)
-    } else {
-      return getHardHandStrategy(playerTotal, dealerValue)
-    }
-  } catch {
-    return 'Error calculating basic strategy'
+  const playerTotal = playerHandValue.value.total
+  const dealerValue = getDealerValue()
+  const isSoft = playerHandValue.value.soft
+  
+  if (isSoft) {
+    return getSoftHandStrategy(playerTotal, dealerValue)
+  } else {
+    return getHardHandStrategy(playerTotal, dealerValue)
   }
 })
 
 const countAdjustment = computed(() => {
-  try {
-    const tc = countingStore?.trueCount || 0
-    const basicAction = getBasicStrategyAction()
-    const optimalAction = recommendation.value.action
-    
-    if (basicAction !== optimalAction) {
-      if (tc >= 2) {
-        return `High count (+${tc}) suggests more aggressive play. Consider ${optimalAction} instead of ${basicAction}.`
-      } else if (tc <= -2) {
-        return `Low count (${tc}) suggests conservative play. Consider ${optimalAction} instead of ${basicAction}.`
-      }
+  const tc = countingStore?.trueCount || 0
+  const basicAction = getBasicStrategyAction()
+  const optimalAction = recommendation.value.action
+  
+  if (basicAction !== optimalAction) {
+    if (tc >= 2) {
+      return `High count (+${tc}) suggests more aggressive play. Consider ${optimalAction} instead of ${basicAction}.`
+    } else if (tc <= -2) {
+      return `Low count (${tc}) suggests conservative play. Consider ${optimalAction} instead of ${basicAction}.`
     }
-    return null
-  } catch {
-    return null
   }
+  return null
 })
 
 const availableActions = computed(() => {
-  try {
-    const actions = []
-    const recAction = recommendation.value.action
-    
+  const actions = []
+  const recAction = recommendation.value.action
+  
+  actions.push({ 
+    name: 'hit', 
+    recommended: recAction === 'hit',
+    advice: recAction === 'hit' ? 'Recommended' : 'Not optimal for this situation'
+  })
+  
+  actions.push({ 
+    name: 'stand', 
+    recommended: recAction === 'stand',
+    advice: recAction === 'stand' ? 'Recommended' : 'Not optimal for this situation'
+  })
+  
+  if (canDouble()) {
     actions.push({ 
-      name: 'hit', 
-      recommended: recAction === 'hit',
-      advice: recAction === 'hit' ? 'Recommended' : 'Not optimal for this situation'
+      name: 'double', 
+      recommended: recAction === 'double',
+      advice: recAction === 'double' ? 'Recommended' : 'Available but not optimal'
     })
-    
-    actions.push({ 
-      name: 'stand', 
-      recommended: recAction === 'stand',
-      advice: recAction === 'stand' ? 'Recommended' : 'Not optimal for this situation'
-    })
-    
-    if (canDouble()) {
-      actions.push({ 
-        name: 'double', 
-        recommended: recAction === 'double',
-        advice: recAction === 'double' ? 'Recommended' : 'Available but not optimal'
-      })
-    }
-    
-    if (canSplit()) {
-      actions.push({ 
-        name: 'split', 
-        recommended: recAction === 'split',
-        advice: recAction === 'split' ? 'Recommended' : 'Available but not optimal'
-      })
-    }
-    
-    return actions
-  } catch {
-    return [{ name: 'hit', recommended: true, advice: 'Default recommendation' }]
   }
+  
+  if (canSplit()) {
+    actions.push({ 
+      name: 'split', 
+      recommended: recAction === 'split',
+      advice: recAction === 'split' ? 'Recommended' : 'Available but not optimal'
+    })
+  }
+  
+  return actions
 })
 
+// Enhanced optimal play function that considers count
 function getOptimalPlay() {
-  try {
-    const playerTotal = playerHandValue.value.total
-    const dealerValue = getDealerValue()
-    const isSoft = playerHandValue.value.soft
-    const trueCount = countingStore?.trueCount || 0
+  const playerTotal = playerHandValue.value.total
+  const dealerValue = getDealerValue()
+  const isSoft = playerHandValue.value.soft
+  const trueCount = countingStore?.trueCount || 0
+  const canDoubleNow = canDouble()
+  
+  // Check for pairs first
+  if (canSplit()) {
+    const pairValue = playerHand.value[0].value
     
-    // Basic hit/stand logic for safety
-    if (playerTotal >= 17) {
-      return { action: 'stand', reason: 'Strong total', confidence: 'High' }
-    }
-    if (playerTotal <= 11) {
-      return { action: 'hit', reason: 'Cannot bust', confidence: 'High' }
+    // Always split aces and 8s
+    if (pairValue === 'A' || pairValue === '8') {
+      return { action: 'split', reason: 'Always split Aces and 8s', confidence: 'Very High' }
     }
     
-    // Stiff hands (12-16)
-    if (dealerValue >= 2 && dealerValue <= 6) {
-      return { action: 'stand', reason: 'Dealer likely to bust', confidence: 'Medium' }
-    } else {
-      return { action: 'hit', reason: 'Must improve vs strong dealer', confidence: 'Medium' }
+    // Count-based pair splitting
+    if (pairValue === '10' && trueCount >= 4 && dealerValue >= 4 && dealerValue <= 6) {
+      return { action: 'split', reason: 'Split 10s vs weak dealer with high count', confidence: 'High' }
     }
-  } catch {
-    return { action: 'hit', reason: 'Default recommendation', confidence: 'Unknown' }
   }
+  
+  // SOFT HANDS
+  if (isSoft) {
+    // Soft 19-21
+    if (playerTotal >= 19) {
+      return { action: 'stand', reason: 'Strong soft total', confidence: 'Very High' }
+    }
+    
+    // Soft 18
+    if (playerTotal === 18) {
+      if (dealerValue >= 9 || dealerValue === 1) {
+        return { action: 'hit', reason: 'Hit soft 18 vs strong dealer', confidence: 'High' }
+      }
+      if (canDoubleNow && dealerValue >= 3 && dealerValue <= 6) {
+        return { action: 'double', reason: 'Double soft 18 vs weak dealer', confidence: 'High' }
+      }
+      return { action: 'stand', reason: 'Stand soft 18', confidence: 'High' }
+    }
+    
+    // Soft 17 and below
+    if (canDoubleNow && dealerValue >= 3 && dealerValue <= 6) {
+      return { action: 'double', reason: 'Double soft hand vs weak dealer', confidence: 'High' }
+    }
+    return { action: 'hit', reason: 'Hit soft 17 or less', confidence: 'High' }
+  }
+  
+  // HARD HANDS WITH COUNT ADJUSTMENTS
+  
+  // Hard 11
+  if (playerTotal === 11) {
+    if (canDoubleNow) {
+      // With positive count, double even vs Ace
+      if (trueCount >= 1 || dealerValue !== 1) {
+        return { action: 'double', reason: 'Double 11 - best doubling hand', confidence: 'Very High' }
+      }
+    }
+    return { action: 'hit', reason: 'Hit 11 (can\'t double)', confidence: 'High' }
+  }
+  
+  // Hard 10
+  if (playerTotal === 10) {
+    if (canDoubleNow) {
+      // Double vs 2-9 always, vs 10/A with positive count
+      if (dealerValue <= 9 || (trueCount >= 4 && dealerValue === 10)) {
+        return { action: 'double', reason: 'Double 10 vs ' + dealerValue, confidence: 'Very High' }
+      }
+    }
+    return { action: 'hit', reason: 'Hit 10', confidence: 'High' }
+  }
+  
+  // Hard 9
+  if (playerTotal === 9) {
+    if (canDoubleNow && dealerValue >= 3 && dealerValue <= 6) {
+      // With high count, also double vs 2
+      if (dealerValue >= 3 || trueCount >= 3) {
+        return { action: 'double', reason: 'Double 9 vs weak dealer', confidence: 'High' }
+      }
+    }
+    return { action: 'hit', reason: 'Hit 9', confidence: 'High' }
+  }
+  
+  // Hard 16
+  if (playerTotal === 16) {
+    // Stand vs 10 with positive count
+    if (dealerValue === 10 && trueCount >= 0) {
+      return { action: 'stand', reason: 'Stand 16 vs 10 with count >= 0', confidence: 'Medium' }
+    }
+    // Stand vs weak dealer
+    if (dealerValue >= 2 && dealerValue <= 6) {
+      return { action: 'stand', reason: 'Stand 16 vs weak dealer', confidence: 'High' }
+    }
+    return { action: 'hit', reason: 'Hit 16 vs strong dealer', confidence: 'Medium' }
+  }
+  
+  // Hard 15
+  if (playerTotal === 15) {
+    // Stand vs 10 with high count
+    if (dealerValue === 10 && trueCount >= 4) {
+      return { action: 'stand', reason: 'Stand 15 vs 10 with TC +4', confidence: 'Medium' }
+    }
+    if (dealerValue >= 2 && dealerValue <= 6) {
+      return { action: 'stand', reason: 'Stand 15 vs weak dealer', confidence: 'High' }
+    }
+    return { action: 'hit', reason: 'Hit 15 vs strong dealer', confidence: 'High' }
+  }
+  
+  // Hard 13-14
+  if (playerTotal >= 13 && playerTotal <= 14) {
+    if (dealerValue >= 2 && dealerValue <= 6) {
+      return { action: 'stand', reason: 'Stand stiff hand vs weak dealer', confidence: 'High' }
+    }
+    return { action: 'hit', reason: 'Hit stiff hand vs strong dealer', confidence: 'High' }
+  }
+  
+  // Hard 12
+  if (playerTotal === 12) {
+    // Hit 12 vs 2/3 with negative count
+    if ((dealerValue === 2 || dealerValue === 3) && trueCount < -1) {
+      return { action: 'hit', reason: 'Hit 12 vs 2/3 with negative count', confidence: 'Medium' }
+    }
+    if (dealerValue >= 4 && dealerValue <= 6) {
+      return { action: 'stand', reason: 'Stand 12 vs weak dealer', confidence: 'High' }
+    }
+    return { action: 'hit', reason: 'Hit 12 vs strong dealer', confidence: 'High' }
+  }
+  
+  // Hard 17+
+  if (playerTotal >= 17) {
+    return { action: 'stand', reason: 'Stand on hard 17+', confidence: 'Very High' }
+  }
+  
+  // Hard 8 and below
+  if (playerTotal <= 8) {
+    return { action: 'hit', reason: 'Always hit 8 or less', confidence: 'Very High' }
+  }
+  
+  // Default
+  return { action: 'hit', reason: 'Default action', confidence: 'Low' }
 }
 
 function getBasicStrategyAction() {
-  try {
-    const playerTotal = playerHandValue.value.total
-    const dealerValue = getDealerValue()
-    const isSoft = playerHandValue.value.soft
-    
-    if (playerTotal >= 17) return 'stand'
-    if (playerTotal <= 11) return 'hit'
-    if (playerTotal >= 12 && playerTotal <= 16) {
-      return dealerValue >= 7 ? 'hit' : 'stand'
-    }
-    return 'hit'
-  } catch {
-    return 'hit'
+  const playerTotal = playerHandValue.value.total
+  const dealerValue = getDealerValue()
+  const isSoft = playerHandValue.value.soft
+  
+  if (playerTotal >= 17) return 'stand'
+  if (playerTotal <= 11) return canDouble() && playerTotal >= 9 ? 'double' : 'hit'
+  if (playerTotal >= 12 && playerTotal <= 16) {
+    return dealerValue >= 7 ? 'hit' : 'stand'
   }
+  return 'hit'
 }
 
 function getSoftHandStrategy(total, dealerValue) {
   if (total >= 19) return 'Stand - strong soft total'
-  if (total <= 17) return 'Hit - cannot bust with soft ace'
-  return 'Soft 18 - hit vs 9,10,A; stand vs 2-8'
+  if (total === 18) return 'Soft 18 - double vs 3-6, stand vs 2,7,8, hit vs 9,10,A'
+  if (total <= 17) return 'Hit soft 17 or less, double vs weak dealer if possible'
+  return 'Follow basic strategy chart'
 }
 
 function getHardHandStrategy(total, dealerValue) {
-  if (total >= 17) return 'Stand - strong total'
-  if (total <= 11) return 'Hit - cannot bust'
+  if (total >= 17) return 'Stand - hard 17 or higher'
+  if (total === 11) return 'Double if possible - best doubling hand'
+  if (total === 10) return 'Double vs 2-9, hit vs 10/A'
+  if (total === 9) return 'Double vs 3-6, hit otherwise'
+  if (total <= 8) return 'Hit - cannot bust'
   if (total >= 12 && total <= 16) {
-    return dealerValue >= 7 ? 'Hit vs strong dealer' : 'Stand vs weak dealer'
+    return dealerValue >= 7 ? 'Hit vs strong dealer' : 'Stand vs weak dealer (2-6)'
   }
   return 'Follow basic strategy chart'
 }
 
 function getDealerValue() {
-  try {
-    const card = dealerUpCard.value
-    if (!card) return 10 // Assume 10 if unknown
-    if (card.value === 'A') return 1 // Ace
-    if (['J', 'Q', 'K'].includes(card.value)) return 10
-    return parseInt(card.value) || 10
-  } catch {
-    return 10
-  }
+  const card = dealerUpCard.value
+  if (!card) return 10
+  if (card.value === 'A') return 1
+  if (['J', 'Q', 'K'].includes(card.value)) return 10
+  return parseInt(card.value) || 10
 }
 
 function canDouble() {
-  try {
-    return gameStore?.currentHand?.cards.length === 2 && 
-           (playerStore?.bankroll || 0) >= (gameStore?.currentHand?.bet || 0)
-  } catch {
-    return false
-  }
+  return gameStore?.currentHand?.cards.length === 2 && 
+         (playerStore?.bankroll || 0) >= (gameStore?.currentHand?.bet || 0)
 }
 
 function canSplit() {
-  try {
-    const hand = gameStore?.currentHand
-    if (!hand || hand.cards.length !== 2) return false
-    
-    const card1Value = hand.cards[0].value
-    const card2Value = hand.cards[1].value
-    
-    // Check if values are the same (treating all 10-value cards as equivalent)
-    const getValue = (card) => ['J', 'Q', 'K'].includes(card) ? '10' : card
-    return getValue(card1Value) === getValue(card2Value) && 
-           (playerStore?.bankroll || 0) >= (hand.bet || 0)
-  } catch {
-    return false
-  }
+  const hand = gameStore?.currentHand
+  if (!hand || hand.cards.length !== 2) return false
+  
+  const card1Value = hand.cards[0].value
+  const card2Value = hand.cards[1].value
+  
+  const getValue = (card) => ['J', 'Q', 'K'].includes(card) ? '10' : card
+  return getValue(card1Value) === getValue(card2Value) && 
+         (playerStore?.bankroll || 0) >= (hand.bet || 0)
 }
 
 function getSuitSymbol(suit) {

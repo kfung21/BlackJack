@@ -1,7 +1,7 @@
-// indexedDB.js - Complete file for Blackjack Pro
+// indexedDB.js - Enhanced with game state persistence
 
 const DB_NAME = 'BlackjackProDB'
-const DB_VERSION = 1
+const DB_VERSION = 2 // Increment version for schema update
 
 // Initialize IndexedDB
 export function initDB() {
@@ -36,6 +36,11 @@ export function initDB() {
       // Create player settings store
       if (!db.objectStoreNames.contains('playerSettings')) {
         db.createObjectStore('playerSettings', { keyPath: 'playerId' })
+      }
+      
+      // NEW: Create game state store for persistence
+      if (!db.objectStoreNames.contains('gameState')) {
+        db.createObjectStore('gameState', { keyPath: 'id' })
       }
     }
   })
@@ -163,7 +168,7 @@ export async function deletePlayer(playerId) {
       const db = event.target.result
       
       // Use a transaction to delete all related data
-      const tx = db.transaction(['players', 'gameHistory', 'playerSettings'], 'readwrite')
+      const tx = db.transaction(['players', 'gameHistory', 'playerSettings', 'gameState'], 'readwrite')
       
       // Delete player record
       tx.objectStore('players').delete(playerId)
@@ -183,6 +188,9 @@ export async function deletePlayer(playerId) {
       
       // Delete player settings
       tx.objectStore('playerSettings').delete(playerId)
+      
+      // Delete saved game state
+      tx.objectStore('gameState').delete(`game-${playerId}`)
       
       // Handle transaction completion
       tx.oncomplete = () => {
@@ -333,6 +341,79 @@ export async function updatePlayerSettings(playerId, settings) {
     }
     
     request.onerror = () => {
+      reject(request.error)
+    }
+  })
+}
+
+// NEW: Game State Persistence Functions
+export async function saveGameState(playerId, gameState) {
+  const db = await openDB()
+  
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(['gameState'], 'readwrite')
+    const store = transaction.objectStore('gameState')
+    
+    const stateData = {
+      id: `game-${playerId}`,
+      playerId,
+      state: gameState,
+      savedAt: new Date()
+    }
+    
+    const request = store.put(stateData)
+    
+    request.onsuccess = () => {
+      console.log('Game state saved successfully')
+      resolve(true)
+    }
+    
+    request.onerror = () => {
+      console.error('Error saving game state:', request.error)
+      reject(request.error)
+    }
+  })
+}
+
+export async function loadGameState(playerId) {
+  const db = await openDB()
+  
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(['gameState'], 'readonly')
+    const store = transaction.objectStore('gameState')
+    const request = store.get(`game-${playerId}`)
+    
+    request.onsuccess = () => {
+      if (request.result) {
+        console.log('Game state loaded successfully')
+        resolve(request.result.state)
+      } else {
+        resolve(null)
+      }
+    }
+    
+    request.onerror = () => {
+      console.error('Error loading game state:', request.error)
+      reject(request.error)
+    }
+  })
+}
+
+export async function clearGameState(playerId) {
+  const db = await openDB()
+  
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(['gameState'], 'readwrite')
+    const store = transaction.objectStore('gameState')
+    const request = store.delete(`game-${playerId}`)
+    
+    request.onsuccess = () => {
+      console.log('Game state cleared')
+      resolve(true)
+    }
+    
+    request.onerror = () => {
+      console.error('Error clearing game state:', request.error)
       reject(request.error)
     }
   })

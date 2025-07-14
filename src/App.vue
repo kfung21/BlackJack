@@ -11,7 +11,11 @@
       </div>
 
       <!-- Offline Indicator -->
-      <div v-if="!playerStore.isOnline" class="offline-banner">
+      <div 
+        v-if="!playerStore.isOnline && showOfflineBanner" 
+        class="offline-banner"
+        @click="hideOfflineBanner"
+      >
         <span>📱 Offline Mode - Your progress is saved locally</span>
       </div>
 
@@ -44,15 +48,36 @@
 </template>
 
 <script setup>
-import { computed, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { ref, computed, onMounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { usePlayerStore } from './stores/playerStore'
+import { useGameStore } from './stores/gameStore'
 
 const route = useRoute()
+const router = useRouter()
 const playerStore = usePlayerStore()
+const gameStore = useGameStore()
+
+const showOfflineBanner = ref(true)
+let offlineTimeout = null
 
 const showNavigation = computed(() => {
   return playerStore.isLoggedIn && route.name !== 'Profile'
+})
+
+// Watch for route changes and save game state
+router.beforeEach(async (to, from, next) => {
+  // If leaving the game view and game is in progress, save state
+  if (from.name === 'Game' && gameStore.gamePhase && gameStore.gamePhase !== 'betting') {
+    console.log('Saving game state before route change...')
+    try {
+      await gameStore.saveCurrentGameState()
+      console.log('Game state saved successfully')
+    } catch (error) {
+      console.error('Failed to save game state:', error)
+    }
+  }
+  next()
 })
 
 onMounted(async () => {
@@ -72,10 +97,20 @@ onMounted(async () => {
   // Online/offline status
   window.addEventListener('online', () => {
     playerStore.setOnlineStatus(true)
+    showOfflineBanner.value = true // Show banner again when going online
   })
 
   window.addEventListener('offline', () => {
     playerStore.setOnlineStatus(false)
+    showOfflineBanner.value = true
+    
+    // Auto-hide offline banner after 5 seconds
+    if (offlineTimeout) {
+      clearTimeout(offlineTimeout)
+    }
+    offlineTimeout = setTimeout(() => {
+      showOfflineBanner.value = false
+    }, 5000)
   })
 
   // Screen orientation lock for mobile
@@ -86,6 +121,13 @@ onMounted(async () => {
       console.log('Screen orientation lock not supported')
     }
   }
+  
+  // Save game state when closing/refreshing the browser
+  window.addEventListener('beforeunload', async (e) => {
+    if (gameStore.gamePhase && gameStore.gamePhase !== 'betting' && gameStore.gamePhase !== 'finished') {
+      await gameStore.saveCurrentGameState()
+    }
+  })
 })
 
 function installPWA() {
@@ -94,6 +136,13 @@ function installPWA() {
 
 function dismissInstall() {
   playerStore.setInstallPrompt(null)
+}
+
+function hideOfflineBanner() {
+  showOfflineBanner.value = false
+  if (offlineTimeout) {
+    clearTimeout(offlineTimeout)
+  }
 }
 </script>
 
@@ -188,6 +237,12 @@ function dismissInstall() {
   z-index: 1001;
   font-size: 14px;
   backdrop-filter: blur(10px);
+  cursor: pointer;
+  transition: opacity 0.3s ease;
+}
+
+.offline-banner:hover {
+  opacity: 0.8;
 }
 
 .btn-small {

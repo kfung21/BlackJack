@@ -4,9 +4,22 @@
       <!-- Compact Header - Just bankroll -->
       <div class="compact-header">
         <span class="bankroll">${{ playerStore.bankroll }}</span>
-        <button @click="newShoe" class="new-shoe-btn" title="New Shoe - Fresh Decks">
-          🔄
-        </button>
+        
+        <!-- Multiplayer toggle and new shoe -->
+        <div class="header-buttons">
+          <button 
+            @click="toggleMultiplayer" 
+            class="multiplayer-btn" 
+            :class="{ active: gameStore.isMultiplayer }"
+            title="Toggle Multiplayer"
+          >
+            {{ gameStore.isMultiplayer ? '👥' : '👤' }}
+          </button>
+          
+          <button @click="newShoe" class="new-shoe-btn" title="New Shoe - Fresh Decks">
+            🔄
+          </button>
+        </div>
       </div>
 
       <!-- Compact Card Count Panel -->
@@ -24,24 +37,44 @@
 
       <!-- Game Message -->
       <div class="game-message" :class="messageClass">
-        {{ gameStore.message }}
+        <span v-if="showCurrentPlayer" class="current-player-indicator">
+          {{ gameStore.currentPlayer?.name }}'s Turn {{ gameStore.currentPlayer?.avatar }}
+        </span>
+        <span v-else>{{ gameStore.message }}</span>
       </div>
 
       <!-- Player Hands -->
-      <div class="player-hands-container">
+      <div class="player-hands-container" :key="`hands-${gameStore.activeViewPlayerId}-${currentPlayerHands.length}`">
+        <!-- Show whose cards we're viewing if in multiplayer -->
+        <div v-if="gameStore.isMultiplayer && gameStore.activeViewPlayer" class="viewing-player-indicator">
+          Viewing: {{ gameStore.activeViewPlayer.name }} {{ gameStore.activeViewPlayer.avatar }}
+        </div>
+        
+        <!-- Debug info -->
+        <div v-if="false" style="color: white; font-size: 10px; margin: 5px;">
+          Debug: Viewing {{ gameStore.activeViewPlayerId }}, 
+          Hands: {{ currentPlayerHands.length }},
+          Cards: {{ currentPlayerHands[0]?.cards?.length || 0 }}
+        </div>
+        
         <PlayerHand
-          v-for="(hand, index) in gameStore.playerHands"
-          :key="`hand-${index}`"
+          v-for="(hand, index) in currentPlayerHands"
+          :key="`hand-${index}-${gameStore.activeViewPlayerId}-${hand.cards.length}`"
           :hand="hand"
           :hand-index="index"
-          :is-active="index === gameStore.currentHandIndex"
+          :is-active="index === 0 && isActiveHand"
           :is-dealing="gameStore.isDealing"
           @card-click="onCardClick"
         />
+        
+        <!-- Show message if no hands -->
+        <div v-if="currentPlayerHands.length === 0" class="no-hands-message">
+          No cards to display
+        </div>
       </div>
 
       <!-- Compact Action Buttons -->
-      <div class="action-buttons" v-if="gameStore.canPlay">
+      <div class="action-buttons" v-if="gameStore.canPlay && isMainPlayerTurn">
         <button 
           @click="hit"
           :disabled="!canHit"
@@ -76,7 +109,7 @@
       </div>
 
       <!-- Compact Hint Button -->
-      <div class="hint-section" v-if="gameStore.canPlay && playerStore.settings.showHints">
+      <div class="hint-section" v-if="gameStore.canPlay && playerStore.settings.showHints && isMainPlayerTurn">
         <button 
           @click="showHint"
           class="btn btn-hint"
@@ -84,18 +117,6 @@
           💡 Hint
         </button>
       </div>
-
-      <!-- Hint Modal -->
-      <HintModal 
-        :is-visible="showHintModal"
-        @close="showHintModal = false"
-      />
-
-      <!-- Betting Panel -->
-      <BettingPanel 
-        v-if="gameStore.canBet"
-        @bet-placed="onBetPlaced"
-      />
 
       <!-- New Game Buttons -->
       <div class="new-game-section" v-if="gameStore.gamePhase === 'finished'">
@@ -112,6 +133,21 @@
           </button>
         </div>
       </div>
+
+      <!-- Hint Modal -->
+      <HintModal 
+        :is-visible="showHintModal"
+        @close="showHintModal = false"
+      />
+
+      <!-- Player Roster -->
+      <PlayerRoster />
+
+      <!-- Betting Panel -->
+      <BettingPanel 
+        v-if="gameStore.canBet"
+        @bet-placed="onBetPlaced"
+      />
 
       <!-- Hidden Bottom Navigation -->
       <div class="bottom-nav" :class="{ 'nav-visible': showBottomNav }" @touchstart="handleNavTouch" @mouseenter="showBottomNav = true" @mouseleave="showBottomNav = false">
@@ -140,17 +176,19 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch, nextTick } from 'vue'
+import { ref, computed, onMounted, watch, nextTick, onBeforeUnmount } from 'vue'
 import { usePlayerStore } from '../stores/playerStore'
 import { useGameStore } from '../stores/gameStore'
 import { useCountingStore } from '../stores/countingStore'
 import { useRouter } from 'vue-router'
+import { generateBotName } from '../utils/botStrategy'
 
 import CardCountPanel from '../components/CardCountPanel.vue'
 import DealerHand from '../components/DealerHand.vue'
 import PlayerHand from '../components/PlayerHand.vue'
 import BettingPanel from '../components/BettingPanel.vue'
 import HintModal from '../components/HintModal.vue'
+import PlayerRoster from '../components/PlayerRoster.vue'
 
 const router = useRouter()
 const playerStore = usePlayerStore()
@@ -162,6 +200,58 @@ const showHintModal = ref(false)
 const showBottomNav = ref(false)
 const processedCards = ref(new Set()) // Track cards already counted
 
+const currentPlayerHands = computed(() => {
+  // Force reactivity by accessing the refs directly
+  const viewPlayerId = gameStore.activeViewPlayerId
+  const allPlayers = gameStore.players
+  
+  console.log(`Looking for player with ID: ${viewPlayerId}`)
+  console.log(`All players:`, allPlayers.map(p => ({ id: p.id, name: p.name, hands: p.hands?.length })))
+  
+  // Find the player we're viewing
+  const viewPlayer = allPlayers.find(p => p.id === viewPlayerId)
+  
+  if (!viewPlayer) {
+    console.log(`Player not found with ID: ${viewPlayerId}`)
+    return []
+  }
+  
+  console.log(`Found player: ${viewPlayer.name}, hands:`, viewPlayer.hands)
+  
+  if (!viewPlayer.hands || viewPlayer.hands.length === 0) {
+    console.log(`Player ${viewPlayer.name} has no hands`)
+    return []
+  }
+  
+  // Return the hands directly (not a spread copy)
+  return viewPlayer.hands
+})
+
+// Watch for active view changes and force update
+watch(() => gameStore.activeViewPlayerId, (newId, oldId) => {
+  console.log(`View switched from ${oldId} to ${newId}`)
+  // Force component update
+  nextTick(() => {
+    const player = gameStore.players.find(p => p.id === newId)
+    console.log(`New view player:`, player)
+    console.log(`Their hands:`, player?.hands)
+  })
+})
+
+// Also watch for changes to the current player's hands
+watch(() => {
+  const viewPlayer = gameStore.players.find(p => p.id === gameStore.activeViewPlayerId)
+  return viewPlayer?.hands
+}, (newHands) => {
+  console.log(`Hands updated for viewed player:`, newHands)
+}, { deep: true })
+
+const isActiveHand = computed(() => {
+  // Check if the viewed player is the current playing player
+  return gameStore.activeViewPlayer?.id === gameStore.currentPlayer?.id && 
+         gameStore.gamePhase === 'playing'
+})
+
 const messageClass = computed(() => {
   if (gameStore.message.includes('won')) return 'message-win'
   if (gameStore.message.includes('lost')) return 'message-lose'
@@ -169,23 +259,44 @@ const messageClass = computed(() => {
   return ''
 })
 
+const showCurrentPlayer = computed(() => {
+  return gameStore.gamePhase === 'playing' && 
+         gameStore.isMultiplayer && 
+         gameStore.currentPlayer
+})
+
+const isMainPlayerTurn = computed(() => {
+  // Check if it's the turn of the player we're viewing
+  const viewingCurrentPlayer = gameStore.activeViewPlayer?.id === gameStore.currentPlayer?.id
+  return !gameStore.isMultiplayer || 
+         (viewingCurrentPlayer && gameStore.currentPlayer?.type === 'human')
+})
+
 const canHit = computed(() => {
-  return gameStore.canPlay && gameStore.currentHand && !gameStore.currentHand.isComplete
+  if (!gameStore.canPlay || !isMainPlayerTurn.value) return false
+  const hands = currentPlayerHands.value
+  return hands.length > 0 && !hands[0].isComplete
 })
 
 const canStand = computed(() => {
-  return gameStore.canPlay && gameStore.currentHand && !gameStore.currentHand.isComplete
+  if (!gameStore.canPlay || !isMainPlayerTurn.value) return false
+  const hands = currentPlayerHands.value
+  return hands.length > 0 && !hands[0].isComplete
 })
 
 const canDouble = computed(() => {
-  if (!gameStore.canPlay || !gameStore.currentHand) return false
-  const hand = gameStore.currentHand
+  if (!gameStore.canPlay || !isMainPlayerTurn.value) return false
+  const hands = currentPlayerHands.value
+  if (hands.length === 0) return false
+  const hand = hands[0]
   return hand.cards.length === 2 && !hand.doubled && playerStore.bankroll >= hand.bet
 })
 
 const canSplitHand = computed(() => {
-  if (!gameStore.canPlay || !gameStore.currentHand) return false
-  const hand = gameStore.currentHand
+  if (!gameStore.canPlay || !isMainPlayerTurn.value) return false
+  const hands = currentPlayerHands.value
+  if (hands.length === 0) return false
+  const hand = hands[0]
   if (hand.cards.length !== 2) return false
   
   const firstValue = getCardValue(hand.cards[0])
@@ -207,6 +318,14 @@ onMounted(async () => {
   await addVisibleCardsToCount()
 })
 
+// Save game state before leaving
+onBeforeUnmount(() => {
+  // Save current game state when leaving the game view
+  if (gameStore.gamePhase !== 'betting' && gameStore.gamePhase !== 'finished') {
+    gameStore.saveCurrentGameState()
+  }
+})
+
 // Watch for dealer hand changes and add to count (avoid double counting)
 watch(() => gameStore.dealerHand, (newHand, oldHand) => {
   console.log('Dealer hand changed, updating count...')
@@ -226,6 +345,21 @@ watch(() => gameStore.playerHands, (newHands, oldHands) => {
     console.log(`Current running count after player update: ${countingStore.runningCount}`)
   })
 }, { deep: true })
+
+// Watch for all player hands changes in multiplayer
+watch(() => gameStore.players, (newPlayers) => {
+  console.log('Player hands changed, updating count...')
+  addVisibleCardsToCount()
+}, { deep: true })
+
+// Watch for active view player changes
+watch(() => gameStore.activeViewPlayerId, (newId) => {
+  console.log(`View switched to player: ${newId}`)
+  // Force update of the player hands display
+  nextTick(() => {
+    console.log(`Viewing player hands:`, currentPlayerHands.value)
+  })
+})
 
 // IMPORTANT: Watch for game phase changes to count revealed dealer cards
 watch(() => gameStore.gamePhase, (newPhase, oldPhase) => {
@@ -249,13 +383,30 @@ watch(() => gameStore.gamePhase, (newPhase, oldPhase) => {
 })
 
 async function addVisibleCardsToCount() {
-  // Get all cards - check both card.faceDown property AND visual state
+  // Get dealer cards
   const dealerCards = gameStore.dealerHand
-  const playerCards = gameStore.playerHands.flatMap(hand => hand.cards)
+  
+  // Get all player cards (multiplayer aware)
+  let allPlayerCards = []
+  if (gameStore.isMultiplayer) {
+    // Count all players' cards
+    for (const player of gameStore.players) {
+      if (player.hands) {
+        for (const hand of player.hands) {
+          allPlayerCards.push(...hand.cards)
+        }
+      }
+    }
+  } else {
+    // Single player - use playerHands
+    const playerCards = gameStore.playerHands.flatMap(hand => hand.cards)
+    allPlayerCards = playerCards
+  }
   
   console.log(`=== COUNTING DEBUG ===`)
   console.log(`Game Phase: ${gameStore.gamePhase}`)
   console.log(`Dealer has ${dealerCards.length} cards total`)
+  console.log(`Players have ${allPlayerCards.length} cards total`)
   
   // Process dealer cards
   for (let i = 0; i < dealerCards.length; i++) {
@@ -272,24 +423,17 @@ async function addVisibleCardsToCount() {
       const countValue = countingStore.addCard(card)
       processedCards.value.add(cardId)
       console.log(`✓ Added dealer card: ${card.value}${getSuitSymbol(card.suit)} (${countValue > 0 ? '+' : ''}${countValue}) - NEW COUNT: ${countingStore.runningCount}`)
-    } else if (processedCards.value.has(cardId)) {
-      console.log(`⏭ Skipped dealer card (already counted): ${card.value}${getSuitSymbol(card.suit)}`)
-    } else {
-      console.log(`❌ Skipped dealer card (face down): ${card.value}${getSuitSymbol(card.suit)}`)
     }
   }
   
   // Process player cards (always visible)
-  console.log(`Player has ${playerCards.length} cards total`)
-  for (const card of playerCards) {
+  for (const card of allPlayerCards) {
     const cardId = card.id || `${card.suit}-${card.value}-${card.deck}`
     
     if (!processedCards.value.has(cardId)) {
       const countValue = countingStore.addCard(card)
       processedCards.value.add(cardId)
       console.log(`✓ Added player card: ${card.value}${getSuitSymbol(card.suit)} (${countValue > 0 ? '+' : ''}${countValue}) - NEW COUNT: ${countingStore.runningCount}`)
-    } else {
-      console.log(`⏭ Skipped player card (already counted): ${card.value}${getSuitSymbol(card.suit)}`)
     }
   }
   
@@ -314,14 +458,8 @@ function getCardValue(card) {
   return parseInt(card.value)
 }
 
-// Fixed: Add the missing onCardClick function
 function onCardClick(card, handIndex) {
-  // This function can be used for card interactions
-  // For now, just log the clicked card
   console.log(`Card clicked: ${card.value} of ${card.suit} in hand ${handIndex}`)
-  
-  // You can add card interaction logic here if needed
-  // For example, highlighting cards, showing card info, etc.
 }
 
 async function hit() {
@@ -340,13 +478,11 @@ async function split() {
   await gameStore.split()
 }
 
-function newShoe() {
-  // Reset everything - fresh shoe with full decks
+async function newShoe() {
   console.log('=== NEW SHOE CLICKED ===')
-  gameStore.createNewDeck()
-  countingStore.newShoe() // This should reset count for balanced systems
-  gameStore.resetGame()
-  processedCards.value.clear() // Clear processed cards tracking
+  // Use the new forceNewGame function which properly resets everything
+  await gameStore.forceNewGame()
+  processedCards.value.clear()
   console.log('New shoe started - fresh decks and reset count')
   console.log(`Running count after new shoe: ${countingStore.runningCount}`)
   console.log('=== END NEW SHOE ===')
@@ -355,8 +491,8 @@ function newShoe() {
 function newGame() {
   console.log('=== NEW GAME CLICKED ===')
   gameStore.resetGame()
-  countingStore.resetRound() // Only reset round, not full count
-  processedCards.value.clear() // Clear processed cards tracking for new game
+  countingStore.resetRound()
+  processedCards.value.clear()
   console.log(`Running count after new game: ${countingStore.runningCount}`)
   console.log('=== END NEW GAME ===')
 }
@@ -365,7 +501,7 @@ function sameBet() {
   if (canUseSameBet.value) {
     gameStore.resetGame()
     countingStore.resetRound()
-    processedCards.value.clear() // Clear processed cards tracking
+    processedCards.value.clear()
     // Small delay to ensure game is reset before placing bet
     setTimeout(() => {
       gameStore.placeBet(gameStore.lastBet)
@@ -387,18 +523,26 @@ function declineInsurance() {
 
 function showHint() {
   console.log('Hint button clicked!')
-  console.log('Current game phase:', gameStore.gamePhase)
-  console.log('Can play:', gameStore.canPlay)
-  console.log('Show hints setting:', playerStore.settings.showHints)
-  console.log('Current modal state:', showHintModal.value)
-  
   showHintModal.value = true
-  
-  console.log('Modal state after setting:', showHintModal.value)
 }
 
 function handleNavTouch() {
   showBottomNav.value = !showBottomNav.value
+}
+
+function toggleMultiplayer() {
+  if (gameStore.gamePhase !== 'betting' && gameStore.gamePhase !== 'finished') {
+    alert('Can only toggle multiplayer between games')
+    return
+  }
+  
+  if (gameStore.isMultiplayer) {
+    gameStore.disableMultiplayer()
+  } else {
+    // Add a default bot when enabling multiplayer
+    gameStore.enableMultiplayer()
+    gameStore.addPlayer(generateBotName(), 'bot', 1000)
+  }
 }
 </script>
 
@@ -428,6 +572,36 @@ function handleNavTouch() {
   font-size: 24px;
   font-weight: bold;
   color: #34a853;
+}
+
+.header-buttons {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.multiplayer-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: white;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.multiplayer-btn.active {
+  background: rgba(52, 168, 83, 0.3);
+  border-color: #34a853;
+}
+
+.multiplayer-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
 }
 
 .new-shoe-btn {
@@ -462,6 +636,11 @@ function handleNavTouch() {
   color: white;
 }
 
+.current-player-indicator {
+  font-weight: bold;
+  color: #34a853;
+}
+
 .message-win {
   background: rgba(52, 168, 83, 0.2);
   color: #34a853;
@@ -483,6 +662,25 @@ function handleNavTouch() {
 
 .player-hands-container {
   margin: 8px 0;
+}
+
+.viewing-player-indicator {
+  text-align: center;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.8);
+  background: rgba(33, 150, 243, 0.2);
+  padding: 4px 8px;
+  border-radius: 12px;
+  margin-bottom: 8px;
+  display: inline-block;
+  width: 100%;
+}
+
+.no-hands-message {
+  text-align: center;
+  color: rgba(255, 255, 255, 0.5);
+  padding: 40px;
+  font-style: italic;
 }
 
 /* Compact Action Buttons */

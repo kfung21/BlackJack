@@ -144,7 +144,7 @@
         </div>
 
         <div class="action-buttons">
-          <button @click="$router.push('/')" class="btn btn-primary btn-large">
+          <button @click="continueGame" class="btn btn-primary btn-large">
             Continue Playing
           </button>
           <button @click="$router.push('/stats')" class="btn btn-secondary">
@@ -201,10 +201,12 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { usePlayerStore } from '../stores/playerStore'
+import { useGameStore } from '../stores/gameStore'
 import { deletePlayer } from '../utils/indexedDB'
 
 const router = useRouter()
 const playerStore = usePlayerStore()
+const gameStore = useGameStore()
 
 const authMode = ref('login')
 const useCustomBankroll = ref(false)
@@ -296,9 +298,19 @@ async function loginPlayer(playerId) {
   }
 }
 
-function logout() {
+async function logout() {
+  // Save the current game state before logging out
+  if (gameStore.gamePhase && gameStore.gamePhase !== 'betting') {
+    await gameStore.saveCurrentGameState()
+  }
+  
   playerStore.logout()
   authMode.value = 'login'
+}
+
+async function continueGame() {
+  // The game state will be automatically loaded when entering the game view
+  router.push('/')
 }
 
 function showDeleteConfirm() {
