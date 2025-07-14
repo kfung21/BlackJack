@@ -1,19 +1,12 @@
 <template>
   <div class="game-view">
     <div class="game-container">
-      <!-- Header -->
-      <div class="game-header">
-        <div class="player-info">
-          <span class="player-name">{{ playerStore.playerName }}</span>
-          <span class="bankroll">${{ playerStore.bankroll }}</span>
-        </div>
-        <div class="game-controls">
-          <button @click="$router.push('/settings')" class="btn btn-icon">⚙️</button>
-          <button @click="$router.push('/stats')" class="btn btn-icon">📊</button>
-        </div>
+      <!-- Compact Header - Just bankroll -->
+      <div class="compact-header">
+        <span class="bankroll">${{ playerStore.bankroll }}</span>
       </div>
 
-      <!-- Card Count Panel -->
+      <!-- Compact Card Count Panel -->
       <CardCountPanel />
 
       <!-- Dealer Hand -->
@@ -44,7 +37,7 @@
         />
       </div>
 
-      <!-- Action Buttons -->
+      <!-- Compact Action Buttons -->
       <div class="action-buttons" v-if="gameStore.canPlay">
         <button 
           @click="hit"
@@ -79,13 +72,13 @@
         </button>
       </div>
 
-      <!-- Hint Button - Always visible when playing -->
+      <!-- Compact Hint Button -->
       <div class="hint-section" v-if="gameStore.canPlay && playerStore.settings.showHints">
         <button 
           @click="showHint"
-          class="btn btn-hint btn-large"
+          class="btn btn-hint"
         >
-          💡 Get Hint
+          💡 Hint
         </button>
       </div>
 
@@ -116,6 +109,29 @@
           </button>
         </div>
       </div>
+
+      <!-- Hidden Bottom Navigation -->
+      <div class="bottom-nav" :class="{ 'nav-visible': showBottomNav }" @touchstart="handleNavTouch" @mouseenter="showBottomNav = true" @mouseleave="showBottomNav = false">
+        <button @click="$router.push('/')" class="nav-btn" :class="{ active: $route.path === '/' }">
+          <span class="nav-icon">🎮</span>
+          <span class="nav-label">Game</span>
+        </button>
+        
+        <button @click="$router.push('/stats')" class="nav-btn" :class="{ active: $route.path === '/stats' }">
+          <span class="nav-icon">📊</span>
+          <span class="nav-label">Stats</span>
+        </button>
+        
+        <button @click="$router.push('/settings')" class="nav-btn" :class="{ active: $route.path === '/settings' }">
+          <span class="nav-icon">⚙️</span>
+          <span class="nav-label">Settings</span>
+        </button>
+        
+        <button @click="$router.push('/profile')" class="nav-btn" :class="{ active: $route.path === '/profile' }">
+          <span class="nav-icon">👤</span>
+          <span class="nav-label">Profile</span>
+        </button>
+      </div>
     </div>
   </div>
 </template>
@@ -140,6 +156,7 @@ const countingStore = useCountingStore()
 
 const showInsurance = ref(false)
 const showHintModal = ref(false)
+const showBottomNav = ref(false)
 
 const messageClass = computed(() => {
   if (gameStore.message.includes('won')) return 'message-win'
@@ -278,14 +295,17 @@ function showHint() {
   console.log('Modal state after setting:', showHintModal.value)
 }
 
-// Removed onHintActionSelected - hint modal is now information only
+function handleNavTouch() {
+  showBottomNav.value = !showBottomNav.value
+}
 </script>
 
 <style scoped>
 .game-view {
   min-height: 100vh;
   background: linear-gradient(135deg, #0f4c75 0%, #1a5490 100%);
-  padding: 16px;
+  padding: 8px;
+  padding-bottom: 60px; /* Space for hidden nav */
 }
 
 .game-container {
@@ -293,56 +313,27 @@ function showHint() {
   margin: 0 auto;
 }
 
-.game-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-  padding: 12px 16px;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
-  backdrop-filter: blur(10px);
-}
-
-.player-info {
-  display: flex;
-  flex-direction: column;
-}
-
-.player-name {
-  font-weight: 600;
-  color: white;
-  font-size: 16px;
+/* Compact Header */
+.compact-header {
+  text-align: center;
+  margin-bottom: 8px;
+  padding: 8px;
 }
 
 .bankroll {
-  font-size: 18px;
+  font-size: 24px;
   font-weight: bold;
   color: #34a853;
 }
 
-.game-controls {
-  display: flex;
-  gap: 8px;
-}
-
-.btn-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  font-size: 16px;
-  background: rgba(255, 255, 255, 0.2);
-  border: none;
-  color: white;
-  cursor: pointer;
-}
-
+/* Compact Game Message */
 .game-message {
   text-align: center;
-  padding: 12px;
-  margin: 12px 0;
-  border-radius: 8px;
+  padding: 6px 12px;
+  margin: 6px 0;
+  border-radius: 6px;
   font-weight: 600;
+  font-size: 14px;
   background: rgba(255, 255, 255, 0.1);
   color: white;
 }
@@ -367,22 +358,25 @@ function showHint() {
 }
 
 .player-hands-container {
-  margin: 16px 0;
+  margin: 8px 0;
 }
 
+/* Compact Action Buttons */
 .action-buttons {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
-  gap: 12px;
-  margin: 16px 0;
+  grid-template-columns: repeat(auto-fit, minmax(70px, 1fr));
+  gap: 6px;
+  margin: 8px 0;
 }
 
 .btn {
   border: none;
-  border-radius: 8px;
+  border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s ease;
   font-family: inherit;
+  font-size: 14px;
+  padding: 8px 12px;
 }
 
 .btn:disabled {
@@ -391,10 +385,7 @@ function showHint() {
 }
 
 .btn-action {
-  padding: 14px 16px;
-  font-size: 16px;
   font-weight: 600;
-  border-radius: 12px;
   background: linear-gradient(145deg, #2196f3 0%, #1976d2 100%);
   color: white;
 }
@@ -403,50 +394,47 @@ function showHint() {
   background: linear-gradient(145deg, #ff9800 0%, #f57c00 100%);
 }
 
+/* Compact Hint Section */
 .hint-section {
   text-align: center;
-  margin: 16px 0;
+  margin: 8px 0;
 }
 
 .btn-hint {
   background: linear-gradient(145deg, #9c27b0 0%, #7b1fa2 100%);
   color: white;
-  width: 100%;
-}
-
-.btn-large {
-  padding: 16px 24px;
-  font-size: 18px;
-  font-weight: bold;
+  padding: 8px 16px;
+  font-size: 12px;
+  width: auto;
 }
 
 .new-game-section {
   text-align: center;
-  margin: 24px 0;
+  margin: 12px 0;
 }
 
 .game-buttons {
   display: flex;
-  gap: 12px;
+  gap: 8px;
   justify-content: center;
 }
 
 .btn-same-bet {
   flex: 1;
-  padding: 16px 24px;
-  font-size: 16px;
+  padding: 12px 16px;
+  font-size: 14px;
   font-weight: bold;
   background: linear-gradient(145deg, #34a853 0%, #2d8659 100%);
-  border-radius: 12px;
+  border-radius: 8px;
   color: white;
 }
 
 .btn-new-game {
   flex: 1;
-  padding: 16px 24px;
-  font-size: 16px;
+  padding: 12px 16px;
+  font-size: 14px;
   font-weight: bold;
-  border-radius: 12px;
+  border-radius: 8px;
   background: linear-gradient(145deg, #666 0%, #555 100%);
   color: white;
 }
@@ -462,18 +450,75 @@ function showHint() {
   color: white;
 }
 
+/* Hidden Bottom Navigation */
+.bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(135deg, #1a5490 0%, #0f4c75 100%);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  padding: 8px 0;
+  transform: translateY(100%);
+  transition: transform 0.3s ease;
+  z-index: 1000;
+  backdrop-filter: blur(10px);
+}
+
+.bottom-nav.nav-visible {
+  transform: translateY(0);
+}
+
+.nav-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  min-width: 60px;
+}
+
+.nav-btn:hover,
+.nav-btn.active {
+  color: white;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.nav-icon {
+  font-size: 18px;
+  margin-bottom: 2px;
+}
+
+.nav-label {
+  font-size: 10px;
+  font-weight: 500;
+}
+
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.7; }
 }
 
-@media (max-width: 480px) {
+@media (max-width: 390px) {
   .game-view {
-    padding: 12px;
+    padding: 6px;
   }
   
   .action-buttons {
     grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .btn {
+    font-size: 12px;
+    padding: 6px 8px;
   }
 }
 </style>
