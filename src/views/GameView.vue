@@ -250,13 +250,13 @@
           <div class="game-buttons">
             <button 
               @click="sameBet" 
-              :disabled="!canUseSameBet"
+              v-if="canUseSameBet"
               class="btn btn-primary btn-same-bet"
             >
               Same Bet (${{ gameStore.lastBet }})
             </button>
             <button @click="newGame" class="btn btn-secondary btn-new-game">
-              New Game
+              {{ canUseSameBet ? 'New Game' : 'New Bet' }}
             </button>
           </div>
         </div>
@@ -339,12 +339,29 @@ const canPlaceBet = computed(() => {
 
 // Check if bankroll is too low
 const isLowBankroll = computed(() => {
-  return playerStore.bankroll < 5 // Minimum bet is $5
+  return playerStore.bankroll < 15 // Minimum bet is $15
 })
 
 // Watch for game phase changes to check for game over
-watch(() => gameStore.gamePhase, (newPhase) => {
-  if (newPhase === 'betting' && playerStore.bankroll < 5) {
+watch(() => gameStore.gamePhase, (newPhase, oldPhase) => {
+  // When transitioning to betting phase, check if player has enough money
+  if (newPhase === 'betting') {
+    // Use nextTick to ensure bankroll is updated after any payouts
+    nextTick(() => {
+      if (playerStore.bankroll < 15) {
+        console.log('Game over - bankroll below minimum:', playerStore.bankroll)
+        showGameOver.value = true
+      }
+      // Removed the check for last bet - let them choose a new bet amount
+    })
+  }
+})
+
+// Also watch bankroll directly for immediate updates
+watch(() => playerStore.bankroll, (newBankroll) => {
+  // If bankroll drops below minimum bet at any time during betting phase
+  if (gameStore.gamePhase === 'betting' && newBankroll < 15) {
+    console.log('Game over due to low bankroll:', newBankroll)
     showGameOver.value = true
   }
 })
@@ -356,16 +373,24 @@ onMounted(async () => {
     return
   }
   
-  // Check if player is out of money
-  if (playerStore.bankroll < 5) {
-    showGameOver.value = true
+  // Initialize bet with last bet or default, but cap at bankroll
+  if (gameStore.lastBet && gameStore.lastBet <= playerStore.bankroll) {
+    currentBet.value = gameStore.lastBet
+  } else {
+    // If can't afford last bet, default to $15 or their bankroll if less
+    currentBet.value = Math.min(15, playerStore.bankroll)
   }
-  
-  // Initialize bet with last bet or default
-  currentBet.value = gameStore.lastBet || 15
   
   gameStore.initializeGame()
   await addVisibleCardsToCount()
+  
+  // Check if player is out of money after initialization
+  nextTick(() => {
+    if (playerStore.bankroll < 15) {
+      console.log('Game over on mount - bankroll:', playerStore.bankroll)
+      showGameOver.value = true
+    }
+  })
 })
 
 function setBet(amount) {
@@ -815,6 +840,15 @@ async function newShoe() {
 
 function newGame() {
   console.log('=== NEW GAME CLICKED ===')
+  
+  // Check if player has enough money before starting new game
+  if (playerStore.bankroll < 15) {
+    console.log('Not enough money for new game - showing game over')
+    showGameOver.value = true
+    return
+  }
+  
+  // Just reset and let them choose a new bet
   gameStore.resetGame()
   countingStore.resetRound()
   processedCards.value.clear()
@@ -823,6 +857,19 @@ function newGame() {
 }
 
 function sameBet() {
+  // First check if player can afford the same bet
+  if (playerStore.bankroll < gameStore.lastBet) {
+    // Can't afford last bet - check if they can afford minimum
+    if (playerStore.bankroll < 15) {
+      showGameOver.value = true
+      return
+    }
+    // They have some money but not enough for last bet
+    // Just start a new game and let them choose a new bet
+    newGame()
+    return
+  }
+  
   if (canUseSameBet.value) {
     gameStore.resetGame()
     countingStore.resetRound()
