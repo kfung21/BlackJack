@@ -227,44 +227,74 @@ watch(() => gameStore.playerHands, (newHands, oldHands) => {
   })
 }, { deep: true })
 
-// Reset count tracking when new round starts
-watch(() => gameStore.gamePhase, (newPhase) => {
-  if (newPhase === 'finished') {
-    countingStore.resetRound()
+// IMPORTANT: Watch for game phase changes to count revealed dealer cards
+watch(() => gameStore.gamePhase, (newPhase, oldPhase) => {
+  console.log(`Game phase changed from ${oldPhase} to ${newPhase}`)
+  
+  if (newPhase === 'dealer' || newPhase === 'finished') {
+    // When dealer plays or game finishes, recount ALL cards to catch revealed hole card
+    console.log('=== RECOUNTING ALL CARDS FOR REVEALED DEALER CARD ===')
+    // Clear processed cards to force recount of all visible cards
+    processedCards.value.clear()
+    addVisibleCardsToCount()
   } else if (newPhase === 'betting') {
     // Reset processed cards tracking for new round
     processedCards.value.clear()
   }
+  
+  // Only reset round count when game is truly finished
+  if (newPhase === 'finished') {
+    countingStore.resetRound()
+  }
 })
 
 async function addVisibleCardsToCount() {
-  // Get all visible cards - STRICTLY exclude face-down cards
-  const dealerVisibleCards = gameStore.dealerHand.filter(card => !card.faceDown && card.faceDown !== true)
+  // Get all cards - check both card.faceDown property AND visual state
+  const dealerCards = gameStore.dealerHand
   const playerCards = gameStore.playerHands.flatMap(hand => hand.cards)
-  const allCards = [...dealerVisibleCards, ...playerCards]
   
   console.log(`=== COUNTING DEBUG ===`)
-  console.log(`Dealer cards: ${gameStore.dealerHand.length}, Visible: ${dealerVisibleCards.length}`)
-  console.log(`Player cards: ${playerCards.length}`)
-  console.log(`All visible cards to check: ${allCards.length}`)
+  console.log(`Game Phase: ${gameStore.gamePhase}`)
+  console.log(`Dealer has ${dealerCards.length} cards total`)
   
-  // Only count cards we haven't seen before
-  for (const card of allCards) {
+  // Process dealer cards
+  for (let i = 0; i < dealerCards.length; i++) {
+    const card = dealerCards[i]
+    const cardId = card.id || `${card.suit}-${card.value}-${card.deck}-${i}`
+    
+    // In dealer/finished phase, count ALL dealer cards (hole card is revealed)
+    const shouldCount = (gameStore.gamePhase === 'dealer' || gameStore.gamePhase === 'finished') || 
+                       (!card.faceDown && card.faceDown !== true)
+    
+    console.log(`Dealer card ${i}: ${card.value}${getSuitSymbol(card.suit)}, faceDown: ${card.faceDown}, phase: ${gameStore.gamePhase}, shouldCount: ${shouldCount}`)
+    
+    if (shouldCount && !processedCards.value.has(cardId)) {
+      const countValue = countingStore.addCard(card)
+      processedCards.value.add(cardId)
+      console.log(`✓ Added dealer card: ${card.value}${getSuitSymbol(card.suit)} (${countValue > 0 ? '+' : ''}${countValue}) - NEW COUNT: ${countingStore.runningCount}`)
+    } else if (processedCards.value.has(cardId)) {
+      console.log(`⏭ Skipped dealer card (already counted): ${card.value}${getSuitSymbol(card.suit)}`)
+    } else {
+      console.log(`❌ Skipped dealer card (face down): ${card.value}${getSuitSymbol(card.suit)}`)
+    }
+  }
+  
+  // Process player cards (always visible)
+  console.log(`Player has ${playerCards.length} cards total`)
+  for (const card of playerCards) {
     const cardId = card.id || `${card.suit}-${card.value}-${card.deck}`
-    console.log(`Checking card: ${card.value}${getSuitSymbol(card.suit)} (${cardId}), faceDown: ${card.faceDown}`)
     
     if (!processedCards.value.has(cardId)) {
       const countValue = countingStore.addCard(card)
       processedCards.value.add(cardId)
-      
-      // Log ALL cards being processed, not just non-zero
-      console.log(`✓ Added card to count: ${card.value}${getSuitSymbol(card.suit)} (${countValue > 0 ? '+' : ''}${countValue}) - NEW COUNT: ${countingStore.runningCount}`)
+      console.log(`✓ Added player card: ${card.value}${getSuitSymbol(card.suit)} (${countValue > 0 ? '+' : ''}${countValue}) - NEW COUNT: ${countingStore.runningCount}`)
     } else {
-      console.log(`⏭ Skipped card (already counted): ${card.value}${getSuitSymbol(card.suit)}`)
+      console.log(`⏭ Skipped player card (already counted): ${card.value}${getSuitSymbol(card.suit)}`)
     }
   }
   
   console.log(`Final running count: ${countingStore.runningCount}`)
+  console.log(`True count: ${countingStore.trueCount}`)
   console.log(`=== END COUNTING DEBUG ===`)
 }
 

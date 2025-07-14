@@ -153,6 +153,44 @@
           <button @click="logout" class="btn btn-danger">
             Switch Player
           </button>
+          <button @click="showDeleteConfirm" class="btn btn-delete">
+            Delete User
+          </button>
+        </div>
+
+        <!-- Delete Confirmation Modal -->
+        <div v-if="showDeleteModal" class="modal-overlay" @click="showDeleteModal = false">
+          <div class="modal-content" @click.stop>
+            <div class="modal-header">
+              <h3>⚠️ Delete User Account</h3>
+            </div>
+            <div class="modal-body">
+              <p>Are you sure you want to delete <strong>{{ playerStore.playerName }}</strong>?</p>
+              <p class="warning-text">This action cannot be undone. All your stats, game history, and progress will be permanently deleted.</p>
+              <div class="user-summary">
+                <div class="summary-item">
+                  <span class="summary-label">Current Bankroll:</span>
+                  <span class="summary-value">${{ playerStore.bankroll }}</span>
+                </div>
+                <div class="summary-item">
+                  <span class="summary-label">Games Played:</span>
+                  <span class="summary-value">{{ playerStore.totalHands }}</span>
+                </div>
+                <div class="summary-item">
+                  <span class="summary-label">Win Rate:</span>
+                  <span class="summary-value">{{ playerStore.winRate }}%</span>
+                </div>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button @click="deleteUser" class="btn btn-confirm-delete">
+                Yes, Delete My Account
+              </button>
+              <button @click="showDeleteModal = false" class="btn btn-cancel">
+                Cancel
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -163,6 +201,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { usePlayerStore } from '../stores/playerStore'
+import { deletePlayer } from '../utils/indexedDB'
 
 const router = useRouter()
 const playerStore = usePlayerStore()
@@ -170,6 +209,7 @@ const playerStore = usePlayerStore()
 const authMode = ref('login')
 const useCustomBankroll = ref(false)
 const customBankrollAmount = ref(1000)
+const showDeleteModal = ref(false)
 
 const newPlayer = ref({
   username: '',
@@ -259,6 +299,33 @@ async function loginPlayer(playerId) {
 function logout() {
   playerStore.logout()
   authMode.value = 'login'
+}
+
+function showDeleteConfirm() {
+  showDeleteModal.value = true
+}
+
+async function deleteUser() {
+  try {
+    const playerId = playerStore.currentPlayer.id
+    
+    // Call the deletePlayer utility function from indexedDB
+    await deletePlayer(playerId)
+    
+    // Logout and refresh players list
+    playerStore.logout()
+    await playerStore.loadPlayers()
+    
+    // Close modal and reset to login
+    showDeleteModal.value = false
+    authMode.value = playerStore.players.length > 0 ? 'login' : 'register'
+    
+    // Show success message (optional)
+    console.log('User deleted successfully')
+  } catch (error) {
+    console.error('Error deleting user:', error)
+    alert('Failed to delete user. Please try again.')
+  }
 }
 
 function formatDate(date) {
@@ -617,6 +684,142 @@ function formatDate(date) {
 .btn-danger {
   background: linear-gradient(145deg, #f44336 0%, #d32f2f 100%);
   color: white;
+}
+
+.btn-delete {
+  background: linear-gradient(145deg, #d32f2f 0%, #b71c1c 100%);
+  color: white;
+  border: 1px solid rgba(183, 28, 28, 0.3);
+}
+
+.btn-delete:hover {
+  background: linear-gradient(145deg, #b71c1c 0%, #d32f2f 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(244, 67, 54, 0.3);
+}
+
+/* Delete Modal Styles */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  padding: 16px;
+}
+
+.modal-content {
+  background: linear-gradient(135deg, #1a5490 0%, #0f4c75 100%);
+  border-radius: 16px;
+  padding: 0;
+  max-width: 400px;
+  width: 100%;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(244, 67, 54, 0.3);
+}
+
+.modal-header {
+  padding: 20px 24px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.modal-header h3 {
+  margin: 0;
+  color: white;
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.modal-body {
+  padding: 24px;
+}
+
+.modal-body p {
+  color: white;
+  margin: 0 0 16px 0;
+  line-height: 1.5;
+}
+
+.warning-text {
+  color: #ff9800;
+  font-size: 14px;
+  background: rgba(255, 152, 0, 0.1);
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 152, 0, 0.3);
+}
+
+.user-summary {
+  margin-top: 20px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.summary-item {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  color: white;
+}
+
+.summary-item:last-child {
+  margin-bottom: 0;
+}
+
+.summary-label {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 14px;
+}
+
+.summary-value {
+  font-weight: 600;
+  color: #34a853;
+}
+
+.modal-footer {
+  padding: 0 24px 24px;
+  display: flex;
+  gap: 12px;
+  flex-direction: column;
+}
+
+.btn-confirm-delete {
+  background: linear-gradient(145deg, #d32f2f 0%, #b71c1c 100%);
+  color: white;
+  padding: 14px 24px;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-confirm-delete:hover {
+  background: linear-gradient(145deg, #b71c1c 0%, #d32f2f 100%);
+  transform: translateY(-1px);
+}
+
+.btn-cancel {
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+  padding: 14px 24px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-cancel:hover {
+  background: rgba(255, 255, 255, 0.2);
 }
 
 @media (max-width: 480px) {
