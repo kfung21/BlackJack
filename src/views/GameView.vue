@@ -256,7 +256,7 @@
               Same Bet (${{ gameStore.lastBet }})
             </button>
             <button @click="newGame" class="btn btn-secondary btn-new-game">
-              {{ canUseSameBet ? 'New Game' : 'New Bet' }}
+              {{ canUseSameBet ? 'Rebet' : 'New Bet' }}
             </button>
           </div>
         </div>
